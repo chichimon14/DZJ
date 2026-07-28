@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         网页考试助手 - 智能判断题映射+全自动打钩稳定版
+// @name         网页考试助手 - 同名题目选项协同精准识别版
 // @namespace    http://tampermonkey.net/
-// @version      29.0.0
-// @description  完美支持判断题智能识别：正确/对 -> A，错误/错 -> B，单选多选判断 100% 自动勾选！
+// @version      30.0.0
+// @description  当题干完全相同时，自动抓取网页当前选项组合，精准识别并定位唯一正确答案！
 // @author       Antigravity
 // @match        *://*/*
 // @match        http://*/*
@@ -286,7 +286,7 @@
             <div id="exam-assistant-header" title="MacBook: 按住此处全向顺滑拖拽">
                 <div class="ea-title-box">
                     <span class="ea-status-dot" id="ea-status" title="连接状态"></span>
-                    <span>考试助手 (判断题智能识别打钩版)</span>
+                    <span>考试助手 (同名题目选项识别版)</span>
                 </div>
                 <div class="ea-actions">
                     <button class="ea-btn-icon" id="ea-toggle-btn" title="最小化/展开">─</button>
@@ -294,7 +294,7 @@
             </div>
             <div id="exam-assistant-body">
                 <div class="ea-tip-box">
-                    <span>✨ 光标扫过即自动搜索与勾选</span>
+                    <span>✨ 智能比对选项，绝不重名混淆</span>
                     <label class="ea-switch-label">
                         <input type="checkbox" id="ea-auto-check-cb" checked> 自动勾选
                     </label>
@@ -427,6 +427,35 @@
         }, true);
     }
 
+    // 🌟 自动抓取当前页面上的所有选项文本，防止同名题目干扰
+    function collectCurrentPageOptions() {
+        try {
+            const selectors = `
+                .choose-list-item, .opt-item, .singleChoose, .ques-answers, .select-item,
+                .checkbox, label.checkbox-inline, .radio, label.radio-inline,
+                .el-checkbox, .el-radio, label.el-checkbox, label.el-radio,
+                [class*="option"], [class*="choice"]
+            `;
+            const nodes = Array.from(document.querySelectorAll(selectors));
+            const optionsText = [];
+
+            nodes.forEach(el => {
+                if (container && container.contains(el)) return;
+                const text = (el.innerText || el.textContent || '').trim();
+                if (text && text.length >= 1 && text.length <= 150) {
+                    // 过滤掉包含过多字符的大框架
+                    if (!text.includes('上一题') && !text.includes('下一题')) {
+                        optionsText.push(text);
+                    }
+                }
+            });
+
+            return Array.from(new Set(optionsText));
+        } catch(e) {
+            return [];
+        }
+    }
+
     function checkAndSearchSelection() {
         try {
             const selObj = window.getSelection();
@@ -533,15 +562,17 @@
             resultsList.innerHTML = '<div style="color: #9ca3af; text-align: center; padding: 10px;">⚡ 检索答案中...</div>';
         }
 
+        const currentOptions = collectCurrentPageOptions();
+
         if (socket && socket.readyState === WebSocket.OPEN) {
-            socket.send(JSON.stringify({ query: queryText }));
+            socket.send(JSON.stringify({ query: queryText, options: currentOptions }));
         } else {
             if (typeof GM_xmlhttpRequest !== 'undefined') {
                 GM_xmlhttpRequest({
                     method: 'POST',
                     url: 'http://127.0.0.1:8000/api/search',
                     headers: { 'Content-Type': 'application/json' },
-                    data: JSON.stringify({ query: queryText, limit: 1 }),
+                    data: JSON.stringify({ query: queryText, options: currentOptions, limit: 1 }),
                     onload: function (res) {
                         if (res.status === 200) {
                             if (statusDot) statusDot.classList.add('online');
@@ -570,7 +601,6 @@
         let targetLetters = [];
         let isTrueFalseQuestion = false;
 
-        // 💡 核心映射 1：判断题智能转换 (正确/对/√ -> A, 错误/错/× -> B)
         if (rawAns.includes('正确') || rawAns === '对' || rawAns.toLowerCase() === 'true' || rawAns === '√') {
             targetLetters = ['A'];
             isTrueFalseQuestion = true;
@@ -578,7 +608,6 @@
             targetLetters = ['B'];
             isTrueFalseQuestion = true;
         } else {
-            // 普通单选/多选题
             targetLetters = Array.from(new Set(rawAns.replace(/[^A-Za-z]/g, '').toUpperCase().split('')));
         }
 
@@ -596,7 +625,6 @@
                     `${letter} .`, `${letter} 、`, `(${letter})`, `（${letter}）`
                 ];
 
-                // 判断题补充汉字文本前缀
                 if (isTrueFalseQuestion) {
                     if (letter === 'A') letterPrefixes.push('对', '正确', '√');
                     if (letter === 'B') letterPrefixes.push('错', '错误', '×');
@@ -610,7 +638,6 @@
                     const text = (el.innerText || el.textContent || '').trim();
                     if (!text || text.length > 300) return false;
 
-                    // 剔除包含其他选项字母的大父框
                     const containsOtherOptions = otherLetters.some(ol => 
                         text.includes(`${ol}.`) || text.includes(`${ol}、`) || text.includes(`${ol}:`)
                     );

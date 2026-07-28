@@ -141,6 +141,7 @@ app.add_middleware(
 
 class SearchRequest(BaseModel):
     query: str
+    options: Optional[List[str]] = None
     limit: Optional[int] = 1
 
 @app.get("/")
@@ -151,7 +152,35 @@ def index():
         "excel_file": EXCEL_PATH_USED
     }
 
-def do_search(query_str: str, limit: int = 1):
+def calculate_option_match_score(item_options: Dict[str, str], page_options: List[str], query_str: str) -> float:
+    """计算题库选项与网页实际选项的重合度得分"""
+    if not item_options:
+        return 0.0
+    
+    score = 0.0
+    item_opt_values = [clean_text(v) for v in item_options.values() if v and len(clean_text(v)) > 0]
+    if not item_opt_values:
+        return 0.0
+
+    clean_query = clean_text(query_str)
+    
+    # 1. 对比页面上传上来的选项
+    if page_options:
+        clean_page_opts = [clean_text(o) for o in page_options if o]
+        for opt_val in item_opt_values:
+            for page_opt in clean_page_opts:
+                if opt_val in page_opt or page_opt in opt_val:
+                    score += 25.0
+                    break
+
+    # 2. 检查选项值是否直接包含在查询文本中
+    for opt_val in item_opt_values:
+        if len(opt_val) >= 2 and opt_val in clean_query:
+            score += 15.0
+
+    return score
+
+def do_search(query_str: str, page_options: Optional[List[str]] = None, limit: int = 1):
     try:
         if not QUESTION_BANK:
             return {"found": False, "msg": "题库为空或未成功加载 Excel", "file": EXCEL_PATH_USED}
@@ -160,26 +189,48 @@ def do_search(query_str: str, limit: int = 1):
         if not clean_q:
             return {"found": False, "msg": "查询文本为空"}
 
-        exact_match_item = None
+        # 1. 搜集所有题干包含/被包含的匹配候选项（不再在第一条 break！）
+        candidate_items = []
         for item in QUESTION_BANK:
             if clean_q in item["clean_title"] or item["clean_title"] in clean_q:
-                exact_match_item = item
-                break
+                candidate_items.append(item)
 
-        best_item = exact_match_item
-        best_score = 100.0 if exact_match_item else 0.0
+        best_item = None
+        best_score = 0.0
 
-        if not best_item:
+        # 如果存在多个同名/近名题，结合【选项重合度】进行二次精细识别！
+        if candidate_items:
+            if len(candidate_items) == 1:
+                best_item = candidate_items[0]
+                best_score = 100.0
+            else:
+                highest_opt_score = -1.0
+                for item in candidate_items:
+                    opt_score = calculate_option_match_score(item.get("options", {}), page_options or [], query_str)
+                    if opt_score > highest_opt_score:
+                        highest_opt_score = opt_score
+                        best_item = item
+                best_score = 100.0
+        else:
+            # 如果没有完全包含，进行模糊检索
             matches = process.extract(
                 clean_q,
                 CLEAN_TITLES,
                 scorer=fuzz.WRatio,
-                limit=1
+                limit=5
             )
             if matches:
-                clean_t, score, index = matches[0]
-                best_score = float(score)
-                best_item = QUESTION_BANK[index]
+                top_candidates = []
+                for clean_t, score, index in matches:
+                    if score >= 60.0:
+                        item = QUESTION_BANK[index]
+                        opt_score = calculate_option_match_score(item.get("options", {}), page_options or [], query_str)
+                        top_candidates.append((item, float(score) + opt_score))
+                
+                if top_candidates:
+                    top_candidates.sort(key=lambda x: x[1], reverse=True)
+                    best_item = top_candidates[0][0]
+                    best_score = float(matches[0][1])
 
         if best_item and best_score >= 60.0:
             ans_letter = best_item["answer_letter"]
@@ -215,11 +266,11 @@ def do_search(query_str: str, limit: int = 1):
 
 @app.get("/api/search")
 def search_get(q: str = Query(..., description="题目查询文本"), limit: int = 1):
-    return do_search(q, limit)
+    return do_search(q, None, limit)
 
 @app.post("/api/search")
 def search_post(req: SearchRequest):
-    return do_search(req.query, req.limit)
+    return do_search(req.query, req.options, req.limit)
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -227,13 +278,15 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
         while True:
             data = await websocket.receive_text()
+            page_opts = None
             try:
                 payload = json.loads(data)
                 query_text = payload.get("query", "")
+                page_opts = payload.get("options", None)
             except Exception:
                 query_text = data
                 
-            res = do_search(query_text)
+            res = do_search(query_text, page_opts)
             await websocket.send_text(json.dumps(res, ensure_ascii=False))
     except WebSocketDisconnect:
         pass
