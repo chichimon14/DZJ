@@ -189,7 +189,7 @@ def do_search(query_str: str, page_options: Optional[List[str]] = None, limit: i
         if not clean_q:
             return {"found": False, "msg": "查询文本为空"}
 
-        # 1. 搜集所有题干包含/被包含的匹配候选项（不再在第一条 break！）
+        # 1. 搜集所有题干匹配的候选项
         candidate_items = []
         for item in QUESTION_BANK:
             if clean_q in item["clean_title"] or item["clean_title"] in clean_q:
@@ -198,12 +198,15 @@ def do_search(query_str: str, page_options: Optional[List[str]] = None, limit: i
         best_item = None
         best_score = 0.0
 
-        # 如果存在多个同名/近名题，结合【选项重合度】进行二次精细识别！
+        # ⚡ 核心性能优化：
+        # 绝大多数题目在题库中是唯一的，若仅匹配到 1 条记录，零额外运算直接返回！
+        # 只有在搜出 2 条及以上同名题目时，才按需触发选项重合度比对。
         if candidate_items:
             if len(candidate_items) == 1:
                 best_item = candidate_items[0]
                 best_score = 100.0
             else:
+                # 出现多条同名题目，按需启动选项协同识别
                 highest_opt_score = -1.0
                 for item in candidate_items:
                     opt_score = calculate_option_match_score(item.get("options", {}), page_options or [], query_str)
@@ -212,7 +215,7 @@ def do_search(query_str: str, page_options: Optional[List[str]] = None, limit: i
                         best_item = item
                 best_score = 100.0
         else:
-            # 如果没有完全包含，进行模糊检索
+            # 如果没有完全匹配，进行模糊检索
             matches = process.extract(
                 clean_q,
                 CLEAN_TITLES,
@@ -220,17 +223,24 @@ def do_search(query_str: str, page_options: Optional[List[str]] = None, limit: i
                 limit=5
             )
             if matches:
-                top_candidates = []
-                for clean_t, score, index in matches:
-                    if score >= 60.0:
-                        item = QUESTION_BANK[index]
-                        opt_score = calculate_option_match_score(item.get("options", {}), page_options or [], query_str)
-                        top_candidates.append((item, float(score) + opt_score))
+                # 检查最高分的几条记录是否有重复同名题
+                top_score = matches[0][1]
+                top_index = matches[0][2]
                 
-                if top_candidates:
-                    top_candidates.sort(key=lambda x: x[1], reverse=True)
-                    best_item = top_candidates[0][0]
-                    best_score = float(matches[0][1])
+                # 如果前几条中存在与第1条题干完全相同的重复题，才进行选项比对
+                same_title_candidates = [QUESTION_BANK[idx] for ct, sc, idx in matches if sc >= top_score - 2.0]
+                
+                if len(same_title_candidates) == 1 or not page_options:
+                    best_item = QUESTION_BANK[top_index]
+                    best_score = float(top_score)
+                else:
+                    highest_opt_score = -1.0
+                    for item in same_title_candidates:
+                        opt_score = calculate_option_match_score(item.get("options", {}), page_options or [], query_str)
+                        if opt_score > highest_opt_score:
+                            highest_opt_score = opt_score
+                            best_item = item
+                    best_score = float(top_score)
 
         if best_item and best_score >= 60.0:
             ans_letter = best_item["answer_letter"]
