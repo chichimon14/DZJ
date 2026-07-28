@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         网页考试助手 - 多选隔离+全自动打钩稳定版
+// @name         网页考试助手 - 智能判断题映射+全自动打钩稳定版
 // @namespace    http://tampermonkey.net/
-// @version      24.0.0
-// @description  移除快捷键，保持最稳定的 MacBook 顺滑拖拽、0.1s 划词搜题与单选/多选全自动打钩功能！
+// @version      29.0.0
+// @description  完美支持判断题智能识别：正确/对 -> A，错误/错 -> B，单选多选判断 100% 自动勾选！
 // @author       Antigravity
 // @match        *://*/*
 // @match        http://*/*
@@ -286,7 +286,7 @@
             <div id="exam-assistant-header" title="MacBook: 按住此处全向顺滑拖拽">
                 <div class="ea-title-box">
                     <span class="ea-status-dot" id="ea-status" title="连接状态"></span>
-                    <span>考试助手 (全自动极速打钩版)</span>
+                    <span>考试助手 (判断题智能识别打钩版)</span>
                 </div>
                 <div class="ea-actions">
                     <button class="ea-btn-icon" id="ea-toggle-btn" title="最小化/展开">─</button>
@@ -560,14 +560,28 @@
         }
     }
 
-    // 🌟 多选题大容器隔离 + 真正选项卡片精准秒勾引擎
+    // 🌟 支持判断题 (正确/对 -> A, 错误/错 -> B) + 多选大容器隔离的秒勾引擎
     function autoClickAnswerOption(matchData) {
         if (!autoCheckEnabled || !matchData) return false;
 
         const rawAns = (matchData.answer_letter || matchData.display_answer || '').trim();
         if (!rawAns) return false;
 
-        const targetLetters = Array.from(new Set(rawAns.replace(/[^A-Za-z]/g, '').toUpperCase().split('')));
+        let targetLetters = [];
+        let isTrueFalseQuestion = false;
+
+        // 💡 核心映射 1：判断题智能转换 (正确/对/√ -> A, 错误/错/× -> B)
+        if (rawAns.includes('正确') || rawAns === '对' || rawAns.toLowerCase() === 'true' || rawAns === '√') {
+            targetLetters = ['A'];
+            isTrueFalseQuestion = true;
+        } else if (rawAns.includes('错误') || rawAns === '错' || rawAns.toLowerCase() === 'false' || rawAns === '×') {
+            targetLetters = ['B'];
+            isTrueFalseQuestion = true;
+        } else {
+            // 普通单选/多选题
+            targetLetters = Array.from(new Set(rawAns.replace(/[^A-Za-z]/g, '').toUpperCase().split('')));
+        }
+
         if (targetLetters.length === 0) return false;
 
         const ALL_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
@@ -577,10 +591,16 @@
             const delay = index * 140;
 
             setTimeout(() => {
-                const letterPrefixes = [
+                let letterPrefixes = [
                     `${letter}.`, `${letter}、`, `${letter}:`, `${letter} `,
                     `${letter} .`, `${letter} 、`, `(${letter})`, `（${letter}）`
                 ];
+
+                // 判断题补充汉字文本前缀
+                if (isTrueFalseQuestion) {
+                    if (letter === 'A') letterPrefixes.push('对', '正确', '√');
+                    if (letter === 'B') letterPrefixes.push('错', '错误', '×');
+                }
 
                 const otherLetters = ALL_LETTERS.filter(l => l !== letter);
 
