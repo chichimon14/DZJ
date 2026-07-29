@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         网页考试助手 - 同名题目选项协同精准识别版
+// @name         网页考试助手 - 全自动无感识别题干与连续自动做题版
 // @namespace    http://tampermonkey.net/
-// @version      30.0.0
-// @description  当题干完全相同时，自动抓取网页当前选项组合，精准识别并定位唯一正确答案！
+// @version      32.0.0
+// @description  无需手动选中文本！进入页面或切换下一题时自动抓取题干、搜答案、自动打钩，全流程无缝自动化！
 // @author       Antigravity
 // @match        *://*/*
 // @match        http://*/*
@@ -32,8 +32,10 @@
     let isCollapsed = false;
     let autoCheckEnabled = true;
     let lastSelectedText = '';
+    let currentTitleHash = '';
     let selectionTimer = null;
     let container = null;
+    let fallbackMode = false;
 
     // 1. 破解防选中
     function forceEnableSelection() {
@@ -261,6 +263,13 @@
             color: #6ee7b7;
             font-weight: normal;
         }
+
+        .ea-auth-link {
+            color: #60a5fa;
+            text-decoration: underline;
+            cursor: pointer;
+            font-weight: bold;
+        }
     `;
 
     if (typeof GM_addStyle !== 'undefined') {
@@ -286,7 +295,7 @@
             <div id="exam-assistant-header" title="MacBook: 按住此处全向顺滑拖拽">
                 <div class="ea-title-box">
                     <span class="ea-status-dot" id="ea-status" title="连接状态"></span>
-                    <span>考试助手 (同名题目选项识别版)</span>
+                    <span>考试助手 (全自动无感切题版)</span>
                 </div>
                 <div class="ea-actions">
                     <button class="ea-btn-icon" id="ea-toggle-btn" title="最小化/展开">─</button>
@@ -294,13 +303,13 @@
             </div>
             <div id="exam-assistant-body">
                 <div class="ea-tip-box">
-                    <span>✨ 智能比对选项，绝不重名混淆</span>
+                    <span>🚀 自动抓取题干并连续秒做</span>
                     <label class="ea-switch-label">
                         <input type="checkbox" id="ea-auto-check-cb" checked> 自动勾选
                     </label>
                 </div>
                 <div class="ea-search-bar">
-                    <input type="text" class="ea-input" id="ea-input-q" placeholder="光标扫过题目即可自动带入...">
+                    <input type="text" class="ea-input" id="ea-input-q" placeholder="正在全自动读取页面题干...">
                     <button class="ea-search-btn" id="ea-search-btn">搜答案</button>
                 </div>
                 <div id="ea-results-list"></div>
@@ -427,7 +436,62 @@
         }, true);
     }
 
-    // 🌟 自动抓取当前页面上的所有选项文本，防止同名题目干扰
+    // 🌟 全自动智能提取网页题干算法
+    function autoExtractQuestionTitle() {
+        try {
+            const titleSelectors = [
+                '.ques-title', '.question-title', '.question-item-title',
+                '.question-content', '.ques-name', '.question_title',
+                '[class*="ques-title"]', '[class*="question-title"]', '[class*="ques-name"]'
+            ];
+
+            for (let selector of titleSelectors) {
+                const el = document.querySelector(selector);
+                if (el && !container.contains(el)) {
+                    const text = (el.innerText || el.textContent || '').trim();
+                    if (text.length >= 4) return cleanTitleForSearch(text);
+                }
+            }
+
+            // 特征文本节点扫描（如以题号或题型开头的 DOM 节点）
+            const allElements = Array.from(document.querySelectorAll('body *'));
+            for (let el of allElements) {
+                if (container && container.contains(el)) continue;
+                const text = (el.innerText || el.textContent || '').trim();
+                
+                if (text && text.length >= 5 && text.length <= 400) {
+                    if (/^\d+[、.（(]|\b(单选题|多选题|判断题|填空题)\b/.test(text)) {
+                        // 确保它是最内部的题干文本节点
+                        const childWithSameText = el.querySelector('*');
+                        if (!childWithSameText || childWithSameText.innerText.length < text.length * 0.7) {
+                            return cleanTitleForSearch(text);
+                        }
+                    }
+                }
+            }
+        } catch(e) {}
+        return '';
+    }
+
+    function cleanTitleForSearch(raw) {
+        return raw.replace(/^[（(]?\d+[）).、\s]*/, '')
+                  .replace(/^(单选题|多选题|判断题|填空题|问答题)[：:\s]*/, '')
+                  .replace(/\(\s*\d+\s*分\s*\)/g, '')
+                  .trim();
+    }
+
+    // 🚀 全自动无感持续做题轮询引擎
+    function autoScanLoop() {
+        if (!autoCheckEnabled) return;
+
+        const extractedTitle = autoExtractQuestionTitle();
+        if (extractedTitle && extractedTitle.length >= 4 && extractedTitle !== currentTitleHash) {
+            currentTitleHash = extractedTitle;
+            if (inputQ) inputQ.value = extractedTitle;
+            sendSearchQuery(extractedTitle);
+        }
+    }
+
     function collectCurrentPageOptions() {
         try {
             const selectors = `
@@ -443,7 +507,6 @@
                 if (container && container.contains(el)) return;
                 const text = (el.innerText || el.textContent || '').trim();
                 if (text && text.length >= 1 && text.length <= 150) {
-                    // 过滤掉包含过多字符的大框架
                     if (!text.includes('上一题') && !text.includes('下一题')) {
                         optionsText.push(text);
                     }
@@ -473,13 +536,14 @@
     }
 
     function autoConnectBackend() {
-        if (isConnected) return;
+        if (isConnected && !fallbackMode) return;
 
         try {
             socket = new WebSocket(URLS[0].url);
 
             socket.onopen = function () {
                 isConnected = true;
+                fallbackMode = false;
                 activeType = 'wss';
                 if (statusDot) {
                     statusDot.classList.add('online');
@@ -500,9 +564,7 @@
 
             socket.onclose = function () {
                 if (activeType === 'wss') {
-                    isConnected = false;
-                    if (statusDot) statusDot.classList.remove('online');
-                    setTimeout(autoConnectBackend, 2000);
+                    tryWs();
                 }
             };
         } catch(e) {
@@ -515,6 +577,7 @@
             socket = new WebSocket(URLS[1].url);
             socket.onopen = function () {
                 isConnected = true;
+                fallbackMode = false;
                 activeType = 'ws';
                 if (statusDot) {
                     statusDot.classList.add('online');
@@ -525,34 +588,65 @@
                 try { renderSingleResult(JSON.parse(event.data)); } catch (e) {}
             };
             socket.onerror = function () {
-                startHttpHeartbeat();
+                startGmHttpChannel();
             };
             socket.onclose = function () {
-                if (activeType === 'ws') {
-                    isConnected = false;
-                    if (statusDot) statusDot.classList.remove('online');
-                    setTimeout(autoConnectBackend, 2000);
-                }
+                startGmHttpChannel();
             };
         } catch(e) {
-            startHttpHeartbeat();
+            startGmHttpChannel();
         }
     }
 
-    function startHttpHeartbeat() {
-        if (typeof GM_xmlhttpRequest !== 'undefined') {
-            GM_xmlhttpRequest({
-                method: 'GET',
-                url: 'http://127.0.0.1:8000/',
-                onload: function(res) {
-                    if (res.status === 200) {
-                        isConnected = true;
-                        activeType = 'http';
-                        if (statusDot) statusDot.classList.add('online');
-                    }
-                }
-            });
+    function startGmHttpChannel() {
+        if (typeof GM_xmlhttpRequest === 'undefined') {
+            renderErrorUI();
+            return;
         }
+
+        GM_xmlhttpRequest({
+            method: 'GET',
+            url: 'https://127.0.0.1:8000/',
+            timeout: 2000,
+            onload: function(res) {
+                if (res.status === 200) {
+                    isConnected = true;
+                    fallbackMode = true;
+                    activeType = 'gm_https';
+                    if (statusDot) {
+                        statusDot.classList.add('online');
+                        statusDot.title = 'Python 服务 (GM HTTPS 特权通道连通)';
+                    }
+                } else {
+                    tryGmHttp();
+                }
+            },
+            onerror: tryGmHttp,
+            ontimeout: tryGmHttp
+        });
+    }
+
+    function tryGmHttp() {
+        GM_xmlhttpRequest({
+            method: 'GET',
+            url: 'http://127.0.0.1:8000/',
+            timeout: 2000,
+            onload: function(res) {
+                if (res.status === 200) {
+                    isConnected = true;
+                    fallbackMode = true;
+                    activeType = 'gm_http';
+                    if (statusDot) {
+                        statusDot.classList.add('online');
+                        statusDot.title = 'Python 服务 (GM HTTP 特权通道连通)';
+                    }
+                } else {
+                    renderErrorUI();
+                }
+            },
+            onerror: renderErrorUI,
+            ontimeout: renderErrorUI
+        });
     }
 
     function sendSearchQuery(queryText) {
@@ -564,15 +658,21 @@
 
         const currentOptions = collectCurrentPageOptions();
 
-        if (socket && socket.readyState === WebSocket.OPEN) {
+        if (socket && socket.readyState === WebSocket.OPEN && !fallbackMode) {
             socket.send(JSON.stringify({ query: queryText, options: currentOptions }));
         } else {
+            const payloadData = JSON.stringify({ query: queryText, options: currentOptions, limit: 1 });
+
             if (typeof GM_xmlhttpRequest !== 'undefined') {
+                const targetUrl = (activeType === 'gm_https' || location.protocol === 'https:') 
+                    ? 'https://127.0.0.1:8000/api/search' 
+                    : 'http://127.0.0.1:8000/api/search';
+
                 GM_xmlhttpRequest({
                     method: 'POST',
-                    url: 'http://127.0.0.1:8000/api/search',
+                    url: targetUrl,
                     headers: { 'Content-Type': 'application/json' },
-                    data: JSON.stringify({ query: queryText, options: currentOptions, limit: 1 }),
+                    data: payloadData,
                     onload: function (res) {
                         if (res.status === 200) {
                             if (statusDot) statusDot.classList.add('online');
@@ -580,10 +680,40 @@
                                 renderSingleResult(JSON.parse(res.responseText));
                             } catch(e) {}
                         } else {
-                            renderErrorUI();
+                            GM_xmlhttpRequest({
+                                method: 'POST',
+                                url: 'http://127.0.0.1:8000/api/search',
+                                headers: { 'Content-Type': 'application/json' },
+                                data: payloadData,
+                                onload: function (res2) {
+                                    if (res2.status === 200) {
+                                        if (statusDot) statusDot.classList.add('online');
+                                        try { renderSingleResult(JSON.parse(res2.responseText)); } catch(e) {}
+                                    } else {
+                                        renderErrorUI();
+                                    }
+                                },
+                                onerror: renderErrorUI
+                            });
                         }
                     },
-                    onerror: renderErrorUI
+                    onerror: function() {
+                        GM_xmlhttpRequest({
+                            method: 'POST',
+                            url: 'http://127.0.0.1:8000/api/search',
+                            headers: { 'Content-Type': 'application/json' },
+                            data: payloadData,
+                            onload: function (res2) {
+                                if (res2.status === 200) {
+                                    if (statusDot) statusDot.classList.add('online');
+                                    try { renderSingleResult(JSON.parse(res2.responseText)); } catch(e) {}
+                                } else {
+                                    renderErrorUI();
+                                }
+                            },
+                            onerror: renderErrorUI
+                        });
+                    }
                 });
             } else {
                 renderErrorUI();
@@ -691,7 +821,11 @@
             resultsList.innerHTML = `
                 <div class="ea-notfound-card">
                     <strong>⚠️ 未能连接到 Python 后端</strong><br>
-                    <span style="font-size: 11px; opacity: 0.8;">请确保在终端运行了 ./start.sh 守护进程！</span>
+                    <span style="font-size: 11px; opacity: 0.9;">
+                        Chrome 在 HTTPS 下可能拦截了证书，请先在 Chrome 新标签页打开并选择授权：<br>
+                        👉 <a class="ea-auth-link" href="https://127.0.0.1:8000/" target="_blank">https://127.0.0.1:8000/</a><br>
+                        (点击“高级” -> “继续前往 127.0.0.1” 即可解锁连通！)
+                    </span>
                 </div>
             `;
         }
@@ -759,5 +893,6 @@
     }
 
     setInterval(startRun, 1000);
+    setInterval(autoScanLoop, 300); // 🚀 每 300ms 自动探测网页新题干，实现连续全自动答题
 
 })();
