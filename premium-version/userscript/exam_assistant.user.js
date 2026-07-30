@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         网页考试助手 Premium v62 - 纯GM直连全能稳定版
+// @name         网页考试助手 Premium v63 - 彻底修复cleanOptionText未定义Bug全能打通版
 // @namespace    http://tampermonkey.net/
-// @version      62.0.0
-// @description  云端 HTTP 纯GM极速直连 + 自动清除 Mixed-Content 拦截 + 强效无条件自动勾选 + 全平台
+// @version      63.0.0
+// @description  云端 HTTP 纯GM极速直连 + 彻底修复 cleanOptionText 未定义 Bug + 强制无条件自动勾选 + 全平台
 // @author       Antigravity
 // @match        *://*/*
 // @grant        GM_addStyle
@@ -263,13 +263,22 @@
                 url: searchUrl,
                 timeout: 8000,
                 onload: (r) => {
-                    updateStatusDot(true); // 响应成功，指示灯亮绿灯！
+                    updateStatusDot(true);
                     if (r.responseText) {
+                        let data = null;
                         try {
-                            const data = JSON.parse(r.responseText);
-                            handleSearchResult(data, cleanQuery);
+                            data = JSON.parse(r.responseText);
                         } catch (e) {
-                            setDebug('⚠️ 响应解析异常');
+                            setDebug('⚠️ JSON 响应体解析异常');
+                            return;
+                        }
+                        if (data) {
+                            try {
+                                handleSearchResult(data, cleanQuery);
+                            } catch (runtimeErr) {
+                                console.error('[ExamAssistant Runtime Error]:', runtimeErr);
+                                setDebug('⚠️ 运行点捕捉异常: ' + runtimeErr.message);
+                            }
                         }
                     }
                 },
@@ -411,6 +420,14 @@
                 const text = el.textContent.trim();
                 return text.length >= 1 && text.length <= 300 && el.children.length <= 8;
             });
+    }
+
+    function cleanOptionText(text) {
+        return (text || '')
+            .toString()
+            .replace(/^\s*[（(]?[A-Da-d][)）.、：:\s]*/, '')
+            .replace(/[\s\n\r]/g, '')
+            .toLowerCase();
     }
 
     function autoCheck(data) {
