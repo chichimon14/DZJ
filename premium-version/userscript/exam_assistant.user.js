@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         网页考试助手 Premium v73 - 右侧面板仅显正确选项与全勾选安全切题版
+// @name         网页考试助手 Premium v74 - 彻底消除c字母乌龙断言与判断题A/B精准勾选版
 // @namespace    http://tampermonkey.net/
-// @version      73.0.0
-// @description  云端 HTTP 纯GM直连 + 右侧面板精简只显正确选项 + 多选全排队落地后安全切题 + 全平台
+// @version      74.0.0
+// @description  云端 HTTP 纯GM直连 + 强效判定判断题类型 + 彻底拔除 correct 中 c 字符误当选项 C 的 Bug + 正确必选A错误必选B + 全平台
 // @author       Antigravity
 // @match        *://*/*
 // @grant        GM_addStyle
@@ -462,13 +462,17 @@
             return;
         }
 
-        // 1. 判断网页上的真实题型（约束防错位：网页写单选/多选或选项>2个的，绝不当判断题处理！）
-        const mainCardText = document.querySelector('form, section, div[class*="question"], div[class*="paper"]') ?.textContent || document.body.textContent || '';
-        const isWebJudge = (/判断题/i.test(mainCardText) && !/单选题|多选题/i.test(mainCardText)) 
-            || (elements.length === 2 && /^(对|错|正确|错误|a\.?\s*对|b\.?\s*错)$/i.test(elements[0].textContent.trim().toLowerCase()));
+        const rawAns = (data.answer || '').toString().trim();
 
-        if (isWebJudge) {
-            autoCheckJudge(data.answer);
+        // 🌟 1. 优先根据数据类型与答案文本无条件断定判断题！
+        const isJudge = data.q_type === 'judge' || /^(correct|wrong|true|false|对|错|正确|错误|√|×)$/i.test(rawAns);
+
+        if (isJudge) {
+            autoCheckJudge(rawAns);
+            if (fullAutoEnabled) {
+                clearTimeout(autoNextTimer);
+                autoNextTimer = setTimeout(() => { switchToNextQuestion(); }, 2200);
+            }
             return;
         }
 
@@ -613,39 +617,32 @@
     // ===== 融合 v51 稳定版：最短叶子节点法则 + 140ms 队列点击算法 =====
     function autoCheckJudge(answerStr) {
         const isCorrect = /^(CORRECT|TRUE|对|正确|√|A|1)$/i.test((answerStr || '').toString().trim());
-        const targetLetters = isCorrect ? ['A'] : ['B'];
-        const ALL_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F'];
+        const letter = isCorrect ? 'A' : 'B';
+        const targetIdx = isCorrect ? 0 : 1;
+        const letterPrefixes = isCorrect ? ['A.', 'A、', 'A', '对', '正确', '√'] : ['B.', 'B、', 'B', '错', '错误', '×'];
 
-        targetLetters.forEach((letter, index) => {
-            const delay = index * 140;
-            setTimeout(() => {
-                const letterPrefixes = isCorrect ? ['A.', 'A、', 'A', '对', '正确', '√'] : ['B.', 'B、', 'B', '错', '错误', '×'];
-                const otherLetters = ALL_LETTERS.filter(l => l !== letter);
-
-                const candidateNodes = Array.from(document.querySelectorAll('body *')).filter(el => {
-                    if (container && container.contains(el)) return false;
-                    const text = (el.innerText || el.textContent || '').trim();
-                    if (!text || text.length > 300) return false;
-
-                    const containsOtherOptions = otherLetters.some(ol =>
-                        text.includes(`${ol}.`) || text.includes(`${ol}、`) || text.includes(`${ol}:`)
-                    );
-                    if (containsOtherOptions) return false;
-
-                    return letterPrefixes.some(p => text.startsWith(p)) || text === letter;
-                });
-
-                if (candidateNodes.length > 0) {
-                    candidateNodes.sort((a, b) => (a.innerText || '').length - (b.innerText || '').length);
-                    smartClickOption(candidateNodes[0]);
-                    setDebug(`✅ 判断题已选 ${letter}: "${(candidateNodes[0].innerText || '').trim().slice(0, 15)}"`);
-                } else {
-                    const fallbackEls = findAllOptionElements();
-                    const targetIdx = isCorrect ? 0 : 1;
-                    if (fallbackEls[targetIdx]) smartClickOption(fallbackEls[targetIdx]);
-                }
-            }, delay);
+        const candidateNodes = Array.from(document.querySelectorAll('body *')).filter(el => {
+            if (container && container.contains(el)) return false;
+            const text = (el.innerText || el.textContent || '').trim();
+            if (!text || text.length > 250) return false;
+            return letterPrefixes.some(p => text.startsWith(p)) || text === letter;
         });
+
+        let targetNode = null;
+        if (candidateNodes.length > 0) {
+            candidateNodes.sort((a, b) => (a.innerText || '').length - (b.innerText || '').length);
+            targetNode = candidateNodes[0];
+        } else {
+            const fallbackEls = findAllOptionElements();
+            if (fallbackEls[targetIdx]) targetNode = fallbackEls[targetIdx];
+        }
+
+        if (targetNode) {
+            smartClickOption(targetNode);
+            setDebug(`✅ 判断题已精准勾选 [${letter}]: ${isCorrect ? '正确 (A)' : '错误 (B)'}`);
+        } else {
+            setDebug(`⚠️ 未定位到判断题选项 ${letter}`);
+        }
     }
 
     // ===== 3 秒全自动切题与全局守护机制 =====
