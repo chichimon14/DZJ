@@ -115,7 +115,14 @@ graph TD
 2. **原生 App 考试**：
    - 使用 **Auto.js / AutoX.js** 基于 Android 无障碍服务 (`AccessibilityService`) 读取界面节点树，结合手机端搜题 API 实现自动点击。
 
+### v89.0 (最新稳定版 - 已推送到 GitHub `premium-version` 分支)
+1. **彻底解决 47 题与多选题勾选失灵**：单次派发 (`singleClick`) 结合已勾选识别，完美防 Toggle 连击取消。
+2. **kyexam 专属 `z-checked` 深层识别**：递归扫描选项节点及其所有子节点的 `z-checked` / `z-sel` / `is-checked` / `selected` 类名，实现已做题目的正确答案**绝对锁死保护**（绝不二次点击取消）。
+3. **判断题 `correct` / `wrong` 自动映射**：自动解包云端返回的 `correct` 锁定 A (对)，`wrong` 锁定 B (错)。
+4. **云端在线 175.178.78.88 直连 + 详细选项内容展开**：直连公网在线服务器，渲染展示每一项选项的完整文字内容。
+
 ---
 
-*文档生成时间：2026-07-29*
-*Git 最新 Commit: 813c944 (Branch: main)*
+*文档更新时间：2026-07-30*
+*Git 最新 Commit: 74c6515 (Branch: premium-version)*
+
