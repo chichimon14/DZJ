@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         网页考试助手 Premium v64 - 终极完结防崩溃稳定版
+// @name         网页考试助手 Premium v65 - 彻底解决多选题重复连击取消打钩Bug
 // @namespace    http://tampermonkey.net/
-// @version      64.0.0
-// @description  云端 HTTP 纯GM极速直连 + 彻底修复 lastResult 未定义 Bug + 强制无条件自动勾选 + 全平台
+// @version      65.0.0
+// @description  云端 HTTP 纯GM极速直连 + 彻底解决多选题重复点击取消打钩 Bug + 智能 Vue 事件派发 + 全平台
 // @author       Antigravity
 // @match        *://*/*
 // @grant        GM_addStyle
@@ -377,20 +377,46 @@
         `;
     }
 
-    // ===== 极速仿真点击与勾选引擎 =====
-    function triggerFullClick(el) {
-        if (!el) return false;
+    // ===== 极速全仿真单节点智能点击（防复选框二次重点击取消打钩）=====
+    function smartClickOption(targetEl) {
+        if (!targetEl) return false;
+
+        // 寻找实际内部 input
+        const input = targetEl.querySelector('input') || (targetEl.tagName === 'INPUT' ? targetEl : null);
+
+        // 如果是复选框 (checkbox) 且已处于勾选状态，切勿重复点击（防止取消勾选）
+        if (input && input.type === 'checkbox' && input.checked) {
+            return true;
+        }
+
+        // 精确定位唯一的点击节点（优先容器，没有则 input）
+        const clickNode = (targetEl.tagName === 'INPUT' ? targetEl : null) 
+            || targetEl.querySelector('label') 
+            || targetEl.querySelector('[class*="check"], [class*="radio"], [class*="box"]') 
+            || targetEl;
+
         try {
             ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(evtType => {
                 const evt = new MouseEvent(evtType, { bubbles: true, cancelable: true, view: win });
-                el.dispatchEvent(evt);
+                clickNode.dispatchEvent(evt);
             });
-            if (typeof el.click === 'function') el.click();
+            if (typeof clickNode.click === 'function' && clickNode !== targetEl) {
+                clickNode.click();
+            }
+
+            // 同步触发 Vue / ElementUI 状态绑定的 change 与 input 事件
+            if (input) {
+                input.checked = true;
+                input.dispatchEvent(new Event('change', { bubbles: true }));
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+            }
             return true;
         } catch (e) {
             return false;
         }
     }
+
+    function triggerFullClick(el) { return smartClickOption(el); }
 
     // ===== 通用选项查找（三层策略）=====
     function findAllOptionElements() {
@@ -484,13 +510,7 @@
             }
 
             if (hitEl) {
-                const input = hitEl.querySelector('input[type="radio"], input[type="checkbox"], [class*="radio"], [class*="check"], [class*="circle"]')
-                    || (hitEl.tagName === 'INPUT' ? hitEl : null)
-                    || hitEl.closest('label')?.querySelector('input')
-                    || hitEl;
-                
-                triggerFullClick(input);
-                triggerFullClick(hitEl);
+                smartClickOption(hitEl);
                 matchedCount++;
             }
         });
