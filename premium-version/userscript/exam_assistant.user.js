@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         网页考试助手 Premium v59 - 中央答题区精准定位与点击秒搜重构版
+// @name         网页考试助手 Premium v60 - 强制无条件自动勾选与强效多重点击版
 // @namespace    http://tampermonkey.net/
-// @version      59.0.0
-// @description  云端 WSS/HTTP 极速搜题 + Token 一键激活 + 锁定中央答题区 + 切换点击即搜 + 全平台
+// @version      60.0.0
+// @description  云端 WSS/HTTP 极速搜题 + 强制无条件自动勾选 + 双重全仿真点击 + 全平台
 // @author       Antigravity
 // @match        *://*/*
 // @grant        GM_addStyle
@@ -307,11 +307,11 @@
     let isSearchingQuestion = false;
     let autoNextTimer = null;
 
-    // ===== 处理搜题结果（带有防错位与智能流水线切题机制）=====
+    // ===== 处理搜题结果（无条件智能强效勾选流水线）=====
     function handleSearchResult(data, reqQuery) {
         isSearchingQuestion = false;
         if (!data) {
-            setDebug('❌ 返回数据为空');
+            setDebug('❌ 云端返回数据为空');
             return;
         }
 
@@ -325,24 +325,28 @@
         lastResult = data;
         renderAnswer(data);
 
-        // 自动勾选逻辑
-        if (data.found && autoCheckEnabled) {
+        // 无论开关状态，只要搜到了答案，无条件 100% 触发打钩！
+        if (data.found) {
+            setDebug(`🎯 匹配答案 [${data.answer}] (${data.score || 0}% 命中)`);
             setTimeout(() => {
                 autoCheck(data);
-                // 3s 全自动联动：完成搜题与勾选后，延时 1.5s 极速切到下一题
+                
+                // 3s 全自动切题联动
                 if (fullAutoEnabled) {
                     clearTimeout(autoNextTimer);
                     autoNextTimer = setTimeout(() => {
                         switchToNextQuestion();
-                    }, 1500);
+                    }, 1600);
                 }
-            }, 120);
-        } else if (!data.found && fullAutoEnabled) {
-            // 题库未找到答案时，停留 2.5s 后切下一题
-            clearTimeout(autoNextTimer);
-            autoNextTimer = setTimeout(() => {
-                switchToNextQuestion();
-            }, 2500);
+            }, 80);
+        } else {
+            setDebug(`😕 未找到匹配题目`);
+            if (fullAutoEnabled) {
+                clearTimeout(autoNextTimer);
+                autoNextTimer = setTimeout(() => {
+                    switchToNextQuestion();
+                }, 2500);
+            }
         }
     }
 
@@ -439,10 +443,9 @@
 
         const opts = data.options || {};
         const elements = findAllOptionElements();
-        setDebug(`🔍 找到 ${elements.length} 个选项容器，目标答案: ${data.answer}`);
 
         if (elements.length === 0) {
-            setDebug('⚠️ 未找到选项容器，请检查页面结构');
+            setDebug(`⚠️ 找到了答案 [${data.answer}] 但未抓取到选项 DOM`);
             return;
         }
 
@@ -453,17 +456,17 @@
             const targetText = opts[letter] ? cleanOptionText(opts[letter]) : '';
             let hitEl = null;
 
-            // === 方法 1: 文本内容精确匹配（优先）===
-            if (targetText && targetText.length >= 2) {
+            // 方法 1: 精确文本内容匹配 (如 "四级")
+            if (targetText && targetText.length >= 1) {
                 for (const el of elements) {
                     const cleaned = cleanOptionText(el.textContent);
-                    if (cleaned.includes(targetText.slice(0, Math.min(8, targetText.length)))) {
+                    if (cleaned.includes(targetText)) {
                         hitEl = el; break;
                     }
                 }
             }
 
-            // === 方法 2: 字母前缀匹配 (A. / A、/ （A）) ===
+            // 方法 2: 字母前缀匹配 (如 "D." 或 "D、")
             if (!hitEl) {
                 const letterRegex = new RegExp(`^\\s*[（(]?${letter}[)）.、：:\\s]`);
                 for (const el of elements) {
@@ -473,24 +476,29 @@
                 }
             }
 
-            // === 方法 3: 索引位置兜底 (A->0, B->1...) ===
+            // 方法 3: 索引位置兜底 (A->0, B->1, C->2, D->3)
             if (!hitEl) {
                 const idx = letterMap[letter];
                 if (idx !== undefined && elements[idx]) hitEl = elements[idx];
             }
 
             if (hitEl) {
-                // 优先点击内部 input，否则点击容器本身
-                const input = hitEl.querySelector('input[type="radio"], input[type="checkbox"]')
+                const input = hitEl.querySelector('input[type="radio"], input[type="checkbox"], [class*="radio"], [class*="check"], [class*="circle"]')
                     || (hitEl.tagName === 'INPUT' ? hitEl : null)
-                    || hitEl.closest('label')?.querySelector('input');
-                triggerFullClick(input || hitEl);
+                    || hitEl.closest('label')?.querySelector('input')
+                    || hitEl;
+                
+                triggerFullClick(input);
+                triggerFullClick(hitEl);
                 matchedCount++;
             }
         });
 
-        if (matchedCount > 0) setDebug(`✅ 已自动勾选答案: ${data.answer}`);
-        else setDebug(`⚠️ 找到答案 (${data.answer}) 但未匹配选框，请手动勾选`);
+        if (matchedCount > 0) {
+            setDebug(`✅ 已自动勾选正确答案: ${data.answer}`);
+        } else {
+            setDebug(`⚠️ 找到答案 (${data.answer}) 但全仿真点击未触发选框`);
+        }
     }
 
     // 兼容旧代码引用
