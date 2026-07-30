@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         网页考试助手 Premium v60 - 强制无条件自动勾选与强效多重点击版
+// @name         网页考试助手 Premium v61 - 全协议HTTPS直连与状态指示升级版
 // @namespace    http://tampermonkey.net/
-// @version      60.0.0
-// @description  云端 WSS/HTTP 极速搜题 + 强制无条件自动勾选 + 双重全仿真点击 + 全平台
+// @version      61.0.0
+// @description  云端 HTTPS/WSS 全协议直连 + 自动消除 Mixed-Content 拦截 + 智能状态指示 + 全平台
 // @author       Antigravity
 // @match        *://*/*
 // @grant        GM_addStyle
@@ -22,9 +22,8 @@
 
     // ===== 云端服务器配置 =====
     const CLOUD_DOMAIN = GM_getValue('cloud_domain', '175.178.78.88');
-    const isIP = /^\d+\.\d+\.\d+\.\d+/.test(CLOUD_DOMAIN);
-    const WS_SCHEME   = (location.protocol === 'https:' && !isIP) ? 'wss://' : 'ws://';
-    const HTTP_SCHEME = (location.protocol === 'https:' && !isIP) ? 'https://' : 'http://';
+    const WS_SCHEME   = location.protocol === 'https:' ? 'wss://' : 'ws://';
+    const HTTP_SCHEME = location.protocol === 'https:' ? 'https://' : 'http://';
 
     const WSS_URL         = `${WS_SCHEME}${CLOUD_DOMAIN}/ws/search`;
     const HTTP_URL        = `${HTTP_SCHEME}${CLOUD_DOMAIN}/api/search`;
@@ -249,7 +248,7 @@
 
         if (cleanQuery.length < 3) return;
         currentSearchingQuery = cleanQuery;
-        setDebug('🔍 云端搜题中: ' + cleanQuery.slice(0, 20) + '...');
+        setDebug('🔍 正在连接云端搜题: ' + cleanQuery.slice(0, 18) + '...');
 
         const token = USER_TOKEN || 'TEST-VIP-2026-8888';
         const searchUrl = `${HTTP_URL}?q=${encodeURIComponent(cleanQuery)}&token=${encodeURIComponent(token)}&device_id=${encodeURIComponent(DEVICE_ID)}`;
@@ -258,16 +257,17 @@
         const onDataReceive = (data) => {
             if (responded) return;
             responded = true;
+            updateStatusDot(true); // 连接成功，点亮绿灯！
             if (data) {
                 try {
                     handleSearchResult(data, cleanQuery);
                 } catch (e) {
-                    console.error('[ExamAssistant] handleSearchResult Error:', e);
+                    console.error('[ExamAssistant] handleSearchResult 异常:', e);
                 }
             }
         };
 
-        // 1. 若 WebSocket 已处于 OPEN 状态，发送搜索
+        // 1. 若 WebSocket 已连通，极速通过 WS 发送
         if (isConnected && socket && socket.readyState === WebSocket.OPEN) {
             socket.send(cleanQuery);
             return;
@@ -278,30 +278,49 @@
             GM_xmlhttpRequest({
                 method: 'GET',
                 url: searchUrl,
-                timeout: 8000,
+                timeout: 7000,
                 onload: (r) => {
-                    if (r.status === 200 && r.responseText) {
+                    if (r.responseText) {
                         try { onDataReceive(JSON.parse(r.responseText)); } catch (e) {}
                     }
                 },
-                onerror: () => {},
-                ontimeout: () => {}
+                onerror: () => {
+                    // 降级 HTTP
+                    const fallbackUrl = `http://${CLOUD_DOMAIN}/api/search?q=${encodeURIComponent(cleanQuery)}&token=${encodeURIComponent(token)}&device_id=${encodeURIComponent(DEVICE_ID)}`;
+                    GM_xmlhttpRequest({
+                        method: 'GET',
+                        url: fallbackUrl,
+                        timeout: 7000,
+                        onload: (r2) => {
+                            if (r2.responseText) {
+                                try { onDataReceive(JSON.parse(r2.responseText)); } catch (e) {}
+                            }
+                        }
+                    });
+                }
             });
         } catch (e) {}
 
-        // 3. 通道二（双保险）：原生 fetch 兜底（1 秒内若 GM 未响应，fetch 强制补救）
+        // 3. 通道二（双保险）：原生 fetch 兜底
         setTimeout(() => {
             if (!responded) {
                 fetch(searchUrl)
                     .then(res => res.json())
                     .then(data => onDataReceive(data))
-                    .catch(err => {
+                    .catch(() => {
                         if (!responded) {
-                            setDebug('❌ 云端连接异常，请检查服务器状态');
+                            fetch(`http://${CLOUD_DOMAIN}/api/search?q=${encodeURIComponent(cleanQuery)}&token=${encodeURIComponent(token)}&device_id=${encodeURIComponent(DEVICE_ID)}`)
+                                .then(res => res.json())
+                                .then(data => onDataReceive(data))
+                                .catch(() => {
+                                    if (!responded) {
+                                        setDebug('❌ 云端连接中断，请检查网络');
+                                    }
+                                });
                         }
                     });
             }
-        }, 1000);
+        }, 750);
     }
 
     let isSearchingQuestion = false;
