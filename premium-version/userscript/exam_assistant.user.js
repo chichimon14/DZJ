@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         网页考试助手 Premium v52 - 云端Token授权 + 私有题库上传 + 全平台
+// @name         网页考试助手 Premium v53 - 全平台精准勾选修复版
 // @namespace    http://tampermonkey.net/
-// @version      52.0.0
+// @version      53.0.0
 // @description  云端 WSS 极速搜题 + Token 一键激活 + 私有题库拖拽上传 + 全自动3秒切题 + 全平台(PC/Android/iOS)
 // @author       Antigravity
 // @match        *://*/*
@@ -346,6 +346,37 @@
         }
     }
 
+    // ===== 通用选项查找（三层策略）=====
+    function findAllOptionElements() {
+        // 策略 1: 直接找 input[type=radio/checkbox] 的父 label 或 li
+        const inputs = Array.from(document.querySelectorAll('input[type="radio"], input[type="checkbox"]'))
+            .filter(inp => inp.offsetParent !== null);
+        if (inputs.length >= 2) {
+            return inputs.map(inp => {
+                const label = inp.closest('label') || inp.closest('li') || inp.closest('div') || inp.parentElement;
+                return label || inp;
+            });
+        }
+
+        // 策略 2: 找带有 A/B/C/D 字母的选项容器
+        const optPattern = /^\s*[（(]?[A-Da-d][)）.、：:\s]/;
+        const candidates = Array.from(document.querySelectorAll('label, li, .option, [class*="option"], [class*="choice"], [class*="item"]'))
+            .filter(el => {
+                if (el.offsetParent === null) return false;
+                const text = el.textContent.trim();
+                return text.length > 0 && text.length < 300 && optPattern.test(text);
+            });
+        if (candidates.length >= 2) return candidates;
+
+        // 策略 3: 宽泛查找可见的 label/li/div 元素作为兜底
+        return Array.from(document.querySelectorAll('label, li, .answer-item, [class*="ans"], [class*="opt"]'))
+            .filter(el => {
+                if (el.offsetParent === null) return false;
+                const text = el.textContent.trim();
+                return text.length >= 1 && text.length <= 300 && el.children.length <= 8;
+            });
+    }
+
     function autoCheck(data) {
         if (!data || !data.found) return;
 
@@ -355,72 +386,66 @@
         }
 
         const answerLetters = (data.answer || '').toUpperCase().split('').filter(c => /[A-D]/.test(c));
-        const opts = data.options || {};
+        if (answerLetters.length === 0) return;
 
-        // 仅抓取屏幕上当前可见的选项节点
-        const elements = getVisibleOptionElements();
+        const opts = data.options || {};
+        const elements = findAllOptionElements();
+        setDebug(`🔍 找到 ${elements.length} 个选项容器，目标答案: ${data.answer}`);
+
+        if (elements.length === 0) {
+            setDebug('⚠️ 未找到选项容器，请检查页面结构');
+            return;
+        }
+
         let matchedCount = 0;
+        const letterMap = { 'A': 0, 'B': 1, 'C': 2, 'D': 3 };
 
         answerLetters.forEach(letter => {
             const targetText = opts[letter] ? cleanOptionText(opts[letter]) : '';
+            let hitEl = null;
 
-            // 优先遍历 DOM 比对
-            for (const el of elements) {
-                const raw = el.textContent.trim();
-                const cleaned = cleanOptionText(raw);
-
-                const letterMatch = raw.match(/^[○●\s]*[（(]?([A-Da-d])[)）.、\s]/);
-                const elLetter = letterMatch ? letterMatch[1].toUpperCase() : '';
-
-                let matched = false;
-
-                // 条件 1: 选项字母直接匹配 (例如 'A. 国务院')
-                if (elLetter && elLetter === letter) matched = true;
-
-                // 条件 2: 选项内容文本包含匹配 (例如 '国务院')
-                if (targetText && targetText.length >= 2 && cleaned.includes(targetText.slice(0, 6))) matched = true;
-
-                if (matched) {
-                    const input = el.querySelector('input[type=radio], input[type=checkbox]') || el.closest('label')?.querySelector('input');
-                    const targetEl = input || el;
-                    triggerFullClick(targetEl);
-                    matchedCount++;
-                    break;
+            // === 方法 1: 文本内容精确匹配（优先）===
+            if (targetText && targetText.length >= 2) {
+                for (const el of elements) {
+                    const cleaned = cleanOptionText(el.textContent);
+                    if (cleaned.includes(targetText.slice(0, Math.min(8, targetText.length)))) {
+                        hitEl = el; break;
+                    }
                 }
+            }
+
+            // === 方法 2: 字母前缀匹配 (A. / A、/ （A）) ===
+            if (!hitEl) {
+                const letterRegex = new RegExp(`^\\s*[（(]?${letter}[)）.、：:\\s]`);
+                for (const el of elements) {
+                    if (letterRegex.test(el.textContent.trim())) {
+                        hitEl = el; break;
+                    }
+                }
+            }
+
+            // === 方法 3: 索引位置兜底 (A->0, B->1...) ===
+            if (!hitEl) {
+                const idx = letterMap[letter];
+                if (idx !== undefined && elements[idx]) hitEl = elements[idx];
+            }
+
+            if (hitEl) {
+                // 优先点击内部 input，否则点击容器本身
+                const input = hitEl.querySelector('input[type="radio"], input[type="checkbox"]')
+                    || (hitEl.tagName === 'INPUT' ? hitEl : null)
+                    || hitEl.closest('label')?.querySelector('input');
+                triggerFullClick(input || hitEl);
+                matchedCount++;
             }
         });
 
-        // 兜底方案：如果页面选项既没带字母前缀又没匹配到文本，根据选项顺序索引兜底 (A->0, B->1, C->2, D->3)
-        if (matchedCount === 0 && elements.length >= 2) {
-            const letterMap = { 'A': 0, 'B': 1, 'C': 2, 'D': 3 };
-            answerLetters.forEach(letter => {
-                const idx = letterMap[letter];
-                if (idx !== undefined && elements[idx]) {
-                    const input = elements[idx].querySelector('input') || elements[idx];
-                    triggerFullClick(input);
-                    matchedCount++;
-                }
-            });
-        }
-
         if (matchedCount > 0) setDebug(`✅ 已自动勾选答案: ${data.answer}`);
-        else setDebug(`⚠️ 找到答案 (${data.answer}) 但未匹配到选框`);
+        else setDebug(`⚠️ 找到答案 (${data.answer}) 但未匹配选框，请手动勾选`);
     }
 
-    function getVisibleOptionElements() {
-        const all = Array.from(document.querySelectorAll('body *'));
-        return all.filter(el => {
-            if (el.offsetParent === null) return false; // 排除隐藏节点
-            const tag = el.tagName.toLowerCase();
-            if (!['label', 'li', 'div', 'span', 'td', 'p'].includes(tag)) return false;
-            if (el.children.length > 5) return false;
-            const rect = el.getBoundingClientRect();
-            if (rect.width < 30 || rect.height < 15 || rect.top < 0 || rect.top > window.innerHeight) return false;
-            const text = el.textContent.trim();
-            if (text.length < 1 || text.length > 250) return false;
-            return true;
-        });
-    }
+    // 兼容旧代码引用
+    function getVisibleOptionElements() { return findAllOptionElements(); }
 
     function cleanQuestionTitleText(raw) {
         return (raw || '')
@@ -434,12 +459,15 @@
             '.question-title', '.q-title', '.stem', '.exam-title',
             '[class*="questionStem"]', '[class*="question_title"]',
             '[class*="ques-title"]', '[class*="title"][class*="ques"]',
-            '.exam-question-title'
+            '[class*="stem"]', '[class*="question-content"]',
+            '.exam-question-title', '.q_tit', '.ques_tit',
+            'h3', 'h4'
         ];
         for (const sel of selectors) {
             const els = document.querySelectorAll(sel);
             for (const el of els) {
-                if (el.offsetParent !== null && el.textContent.trim().length > 6) {
+                const text = el.textContent.trim();
+                if (el.offsetParent !== null && text.length > 6 && text.length < 500) {
                     return el;
                 }
             }
@@ -449,18 +477,26 @@
 
     function autoCheckJudge(answer) {
         const isCorrect = answer === 'correct';
-        const keywords = isCorrect ? ['正确', '对', '是', 'true', '√'] : ['错误', '错', '否', 'false', '×'];
+        const trueKw  = ['正确', '对的', '√', '对', '是', 'true'];
+        const falseKw = ['错误', '错的', '×', '错', '否', 'false'];
+        const keywords = isCorrect ? trueKw : falseKw;
+        const antiKw   = isCorrect ? falseKw : trueKw;
 
-        const elements = getAllOptionElements();
+        const elements = findAllOptionElements();
         for (const el of elements) {
-            const text = el.textContent.trim().toLowerCase();
-            if (keywords.some(k => text === k || text.includes(k))) {
-                const input = el.querySelector('input') || el.closest('label')?.querySelector('input');
-                if (input) { singleClick(input); break; }
-                singleClick(el); break;
+            const text = el.textContent.trim();
+            const textLow = text.toLowerCase();
+            // 排除包含反向关键词的元素（防止"错误"里误匹配"对"）
+            const hasAnti = antiKw.some(k => textLow.includes(k.toLowerCase()));
+            if (!hasAnti && keywords.some(k => textLow === k.toLowerCase() || textLow.includes(k.toLowerCase()))) {
+                const input = el.querySelector('input') || (el.tagName === 'INPUT' ? el : null)
+                    || el.closest('label')?.querySelector('input');
+                triggerFullClick(input || el);
+                setDebug(`✅ 判断题已选: ${isCorrect ? '正确' : '错误'}`);
+                return;
             }
         }
-        setDebug(`✅ 判断题已选: ${isCorrect ? '正确' : '错误'}`);
+        setDebug(`⚠️ 判断题未找到选项: ${isCorrect ? '正确' : '错误'}`);
     }
 
     // ===== 3 秒全自动切题（继承 v51 守护机制）=====
@@ -515,18 +551,7 @@
         searchQuestion(title);
     }
 
-    function findQuestionTitle() {
-        const selectors = [
-            '.question-title', '.q-title', '.stem', '.exam-title',
-            '[class*="questionStem"]', '[class*="question_title"]',
-            '[class*="ques-title"]', '[class*="title"][class*="ques"]'
-        ];
-        for (const sel of selectors) {
-            const el = document.querySelector(sel);
-            if (el && el.textContent.trim().length > 5) return el;
-        }
-        return null;
-    }
+    // findQuestionTitle 已在上方定义，此处移除重复定义
 
     // 300ms 心跳守护
     setInterval(() => {
