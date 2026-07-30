@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>考试助手 - 超级管理员控制台</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0e1a;--bg2:#111827;--bg3:#1f2937;--bg4:#374151;
+  --green:#10b981;--green2:rgba(16,185,129,.15);
+  --blue:#3b82f6;--blue2:rgba(59,130,246,.15);
+  --purple:#8b5cf6;--purple2:rgba(139,92,246,.15);
+  --red:#ef4444;--red2:rgba(239,68,68,.15);
+  --gold:#f59e0b;--gold2:rgba(245,158,11,.15);
+  --text:#f1f5f9;--text2:#94a3b8;--text3:#64748b;
+  --radius:12px;--radius-sm:8px;
+  --border:rgba(255,255,255,.08);
+}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+
+/* ── 登录遮罩 ── */
+#login-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,.85);backdrop-filter:blur(12px);
+  display:flex;align-items:center;justify-content:center;z-index:9999;
+}
+.login-card{
+  background:var(--bg2);border:1px solid var(--border);border-radius:20px;
+  padding:40px;width:400px;text-align:center;
+}
+.login-card h1{font-size:24px;font-weight:700;margin-bottom:8px}
+.login-card p{color:var(--text2);font-size:14px;margin-bottom:28px}
+.login-card input{
+  width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);
+  padding:14px 16px;color:var(--text);font-size:14px;outline:none;margin-bottom:16px;
+  transition:border-color .2s;
+}
+.login-card input:focus{border-color:var(--blue)}
+.btn{
+  display:inline-flex;align-items:center;gap:8px;padding:12px 24px;
+  border-radius:var(--radius-sm);border:none;font-size:14px;font-weight:600;
+  cursor:pointer;transition:all .2s;width:100%;justify-content:center;
+}
+.btn-primary{background:linear-gradient(135deg,var(--blue),var(--purple));color:#fff}
+.btn-primary:hover{opacity:.85;transform:translateY(-1px)}
+.btn-danger{background:var(--red2);border:1px solid var(--red);color:var(--red)}
+.btn-danger:hover{background:rgba(239,68,68,.3)}
+.btn-success{background:var(--green2);border:1px solid var(--green);color:var(--green)}
+.btn-success:hover{background:rgba(16,185,129,.3)}
+.btn-sm{padding:7px 14px;font-size:12px;width:auto}
+
+/* ── 主布局 ── */
+.layout{display:flex;height:100vh;overflow:hidden}
+.sidebar{
+  width:240px;background:var(--bg2);border-right:1px solid var(--border);
+  display:flex;flex-direction:column;flex-shrink:0;
+}
+.sidebar-brand{
+  padding:24px 20px;border-bottom:1px solid var(--border);
+  font-size:16px;font-weight:700;
+}
+.sidebar-brand span{
+  display:inline-block;background:linear-gradient(135deg,var(--green),var(--blue));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+}
+.nav{flex:1;padding:16px 12px;display:flex;flex-direction:column;gap:4px}
+.nav-item{
+  display:flex;align-items:center;gap:12px;padding:10px 12px;
+  border-radius:var(--radius-sm);color:var(--text2);font-size:14px;
+  cursor:pointer;transition:all .2s;border:none;background:none;width:100%;text-align:left;
+}
+.nav-item:hover,.nav-item.active{background:var(--blue2);color:var(--blue)}
+.nav-item.active{font-weight:600}
+.sidebar-bottom{padding:16px;border-top:1px solid var(--border)}
+.admin-badge{
+  display:flex;align-items:center;gap:10px;
+  background:var(--green2);border:1px solid var(--green);
+  border-radius:var(--radius-sm);padding:10px 12px;font-size:13px;
+}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--green);
+  box-shadow:0 0 8px var(--green);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+
+/* ── 内容区 ── */
+.content{flex:1;overflow-y:auto;padding:28px}
+.page{display:none}
+.page.active{display:block}
+.page-title{font-size:22px;font-weight:700;margin-bottom:8px}
+.page-sub{color:var(--text2);font-size:14px;margin-bottom:24px}
+
+/* ── 统计卡片 ── */
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:28px}
+.stat-card{
+  background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);
+  padding:20px;display:flex;align-items:flex-start;justify-content:space-between;
+}
+.stat-label{color:var(--text2);font-size:13px;margin-bottom:8px}
+.stat-value{font-size:28px;font-weight:700}
+.stat-icon{font-size:28px}
+
+/* ── 表格 ── */
+.table-wrap{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.table-header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:16px 20px;border-bottom:1px solid var(--border);
+}
+.table-header h3{font-size:15px;font-weight:600}
+table{width:100%;border-collapse:collapse}
+th{
+  background:var(--bg3);padding:12px 16px;text-align:left;
+  font-size:12px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;
+}
+td{padding:12px 16px;font-size:13px;border-top:1px solid var(--border);vertical-align:middle}
+tr:hover td{background:rgba(255,255,255,.02)}
+.badge{
+  display:inline-flex;align-items:center;padding:3px 10px;border-radius:99px;
+  font-size:11px;font-weight:600;
+}
+.badge-green{background:var(--green2);color:var(--green);border:1px solid rgba(16,185,129,.3)}
+.badge-red{background:var(--red2);color:var(--red);border:1px solid rgba(239,68,68,.3)}
+.badge-blue{background:var(--blue2);color:var(--blue);border:1px solid rgba(59,130,246,.3)}
+.badge-gold{background:var(--gold2);color:var(--gold);border:1px solid rgba(245,158,11,.3)}
+code{
+  background:var(--bg3);padding:3px 8px;border-radius:4px;
+  font-size:12px;font-family:monospace;letter-spacing:.05em;color:var(--green);
+}
+
+/* ── 表单 ── */
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:24px;margin-bottom:20px}
+.card h3{font-size:15px;font-weight:600;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border)}
+.form-row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px}
+.form-group{display:flex;flex-direction:column;gap:6px}
+.form-group label{font-size:12px;color:var(--text2);font-weight:500}
+.form-control{
+  background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);
+  padding:10px 14px;color:var(--text);font-size:13px;outline:none;min-width:120px;
+}
+.form-control:focus{border-color:var(--blue)}
+select.form-control option{background:var(--bg3)}
+
+/* ── 生成结果 ── */
+.token-list{
+  background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);
+  padding:16px;max-height:200px;overflow-y:auto;margin-top:16px;
+}
+.token-item{
+  font-family:monospace;font-size:13px;color:var(--green);padding:4px 0;
+  border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;
+}
+.token-item:last-child{border-bottom:none}
+
+/* ── 文件上传区 ── */
+.drop-zone{
+  border:2px dashed var(--border);border-radius:var(--radius);padding:40px;
+  text-align:center;cursor:pointer;transition:all .3s;
+}
+.drop-zone:hover,.drop-zone.drag{border-color:var(--blue);background:var(--blue2)}
+.drop-zone .dz-icon{font-size:40px;margin-bottom:12px}
+.drop-zone p{color:var(--text2);font-size:14px}
+.drop-zone strong{color:var(--blue)}
+
+/* ── toast ── */
+.toast{
+  position:fixed;bottom:24px;right:24px;padding:14px 20px;border-radius:var(--radius-sm);
+  font-size:14px;font-weight:500;z-index:99999;
+  animation:slideIn .3s ease;
+}
+.toast.success{background:var(--green2);border:1px solid var(--green);color:var(--green)}
+.toast.error{background:var(--red2);border:1px solid var(--red);color:var(--red)}
+@keyframes slideIn{from{transform:translateX(120%)}to{transform:translateX(0)}}
+
+/* 分页 */
+.pagination{display:flex;gap:8px;justify-content:flex-end;padding:16px 20px;border-top:1px solid var(--border)}
+.page-btn{
+  background:var(--bg3);border:1px solid var(--border);border-radius:6px;
+  padding:6px 14px;font-size:13px;color:var(--text2);cursor:pointer;
+}
+.page-btn:hover,.page-btn.active{background:var(--blue2);color:var(--blue);border-color:var(--blue)}
+
+/* 响应式 */
+@media(max-width:768px){
+  .layout{flex-direction:column}
+  .sidebar{width:100%;height:auto}
+  .nav{flex-direction:row;overflow-x:auto;padding:8px}
+  .nav-item span:first-child{display:none}
+  .sidebar-bottom{display:none}
+}
+</style>
+</head>
+<body>
+
+<!-- 登录遮罩 -->
+<div id="login-overlay">
+  <div class="login-card">
+    <div style="font-size:48px;margin-bottom:16px">🛡️</div>
+    <h1>超级管理员控制台</h1>
+    <p>请输入管理员密钥以继续</p>
+    <input type="password" id="login-key" placeholder="输入 Admin Key..." onkeydown="if(event.key==='Enter')doLogin()"/>
+    <button class="btn btn-primary" onclick="doLogin()">🔑 登录后台</button>
+    <p id="login-err" style="color:var(--red);margin-top:12px;font-size:13px;display:none">密钥错误，请重试</p>
+  </div>
+</div>
+
+<!-- 主界面 -->
+<div class="layout">
+  <!-- 侧边栏 -->
+  <div class="sidebar">
+    <div class="sidebar-brand">
+      <span>🎯 考试助手</span>
+      <div style="font-size:11px;color:var(--text3);font-weight:400;margin-top:4px">Premium 管理后台</div>
+    </div>
+    <nav class="nav">
+      <button class="nav-item active" onclick="showPage('dashboard',this)">📊 <span>数据概览</span></button>
+      <button class="nav-item" onclick="showPage('tokens',this)">🎫 <span>卡密管理</span></button>
+      <button class="nav-item" onclick="showPage('bank',this)">📚 <span>公共题库</span></button>
+      <button class="nav-item" onclick="showPage('orders',this)">💳 <span>订单记录</span></button>
+      <button class="nav-item" onclick="showPage('settings',this)">⚙️ <span>系统设置</span></button>
+    </nav>
+    <div class="sidebar-bottom">
+      <div class="admin-badge">
+        <div class="dot"></div>
+        <span style="font-size:13px;font-weight:600">管理员已登录</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 内容区 -->
+  <div class="content">
+
+    <!-- Dashboard -->
+    <div class="page active" id="page-dashboard">
+      <div class="page-title">📊 数据概览</div>
+      <div class="page-sub">实时统计系统运营数据</div>
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div><div class="stat-label">总卡密数</div><div class="stat-value" id="s-total">-</div></div>
+          <div class="stat-icon">🎫</div>
+        </div>
+        <div class="stat-card">
+          <div><div class="stat-label">活跃卡密</div><div class="stat-value" id="s-active" style="color:var(--green)">-</div></div>
+          <div class="stat-icon">✅</div>
+        </div>
+        <div class="stat-card">
+          <div><div class="stat-label">今日搜题次数</div><div class="stat-value" id="s-searches" style="color:var(--blue)">-</div></div>
+          <div class="stat-icon">🔍</div>
+        </div>
+        <div class="stat-card">
+          <div><div class="stat-label">累计成交额 (¥)</div><div class="stat-value" id="s-revenue" style="color:var(--gold)">-</div></div>
+          <div class="stat-icon">💰</div>
+        </div>
+        <div class="stat-card">
+          <div><div class="stat-label">成功订单数</div><div class="stat-value" id="s-orders">-</div></div>
+          <div class="stat-icon">📦</div>
+        </div>
+        <div class="stat-card">
+          <div><div class="stat-label">公共题库题数</div><div class="stat-value" id="s-bank" style="color:var(--purple)">-</div></div>
+          <div class="stat-icon">📚</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 卡密管理 -->
+    <div class="page" id="page-tokens">
+      <div class="page-title">🎫 卡密管理</div>
+      <div class="page-sub">批量生成、查询与管控用户卡密</div>
+
+      <!-- 生成卡密 -->
+      <div class="card">
+        <h3>🔧 批量生成卡密</h3>
+        <div class="form-row">
+          <div class="form-group">
+            <label>卡密类型</label>
+            <select class="form-control" id="gen-type">
+              <option value="TIME">时间卡</option>
+              <option value="LIFETIME">买断卡（永久）</option>
+            </select>
+          </div>
+          <div class="form-group" id="gen-days-wrap">
+            <label>有效天数</label>
+            <select class="form-control" id="gen-days">
+              <option value="7">7 天（周卡）</option>
+              <option value="30" selected>30 天（月卡）</option>
+              <option value="90">90 天（季卡）</option>
+              <option value="365">365 天（年卡）</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>生成数量</label>
+            <input class="form-control" type="number" id="gen-count" value="10" min="1" max="200" style="width:80px"/>
+          </div>
+          <div class="form-group" style="flex:1">
+            <label>备注（选填）</label>
+            <input class="form-control" type="text" id="gen-note" placeholder="如：微信自动发卡批次"/>
+          </div>
+          <button class="btn btn-success btn-sm" onclick="generateTokens()">⚡ 生成</button>
+        </div>
+        <div id="gen-result" style="display:none">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <span style="font-size:13px;color:var(--text2)">生成成功，点击卡密一键复制</span>
+            <button class="btn btn-sm" style="background:var(--bg4);color:var(--text2);width:auto;border:1px solid var(--border)" onclick="copyAll()">📋 复制全部</button>
+          </div>
+          <div class="token-list" id="token-list"></div>
+        </div>
+      </div>
+
+      <!-- 卡密列表 -->
+      <div class="table-wrap">
+        <div class="table-header">
+          <h3>📋 全部卡密</h3>
+          <button class="btn btn-sm btn-primary" onclick="loadTokens()">🔄 刷新</button>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>卡密</th><th>类型</th><th>状态</th><th>绑定设备</th><th>激活时间</th><th>到期时间</th><th>备注</th><th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="token-tbody"></tbody>
+        </table>
+        <div class="pagination" id="token-pagination"></div>
+      </div>
+    </div>
+
+    <!-- 公共题库 -->
+    <div class="page" id="page-bank">
+      <div class="page-title">📚 公共题库管理</div>
+      <div class="page-sub">上传标准 Excel 题库，供全体用户共享使用</div>
+
+      <div class="card">
+        <h3>📤 上传公共题库</h3>
+        <p style="color:var(--text2);font-size:13px;margin-bottom:16px">
+          标准格式列名：<code>序号</code> <code>题干</code> <code>答案</code> <code>详细答案</code>
+        </p>
+        <div class="drop-zone" id="bank-drop" onclick="document.getElementById('bank-file').click()">
+          <div class="dz-icon">📊</div>
+          <p>点击或拖拽 <strong>Excel / CSV</strong> 文件到此处上传</p>
+          <p style="font-size:12px;margin-top:8px;color:var(--text3)">支持 .xlsx .xls .csv 格式</p>
+        </div>
+        <input type="file" id="bank-file" accept=".xlsx,.xls,.csv" style="display:none" onchange="uploadBank(this)"/>
+        <div id="bank-upload-result" style="margin-top:16px;display:none"></div>
+        <div style="margin-top:16px;display:flex;gap:12px;align-items:center">
+          <span style="font-size:14px;color:var(--text2)">当前公共题库：<strong id="public-count" style="color:var(--green)">-</strong> 题</span>
+          <button class="btn btn-danger btn-sm" onclick="clearPublicBank()">🗑️ 清空公共题库</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 订单记录 -->
+    <div class="page" id="page-orders">
+      <div class="page-title">💳 订单记录</div>
+      <div class="page-sub">查看用户支付订单与自动发卡记录</div>
+      <div class="table-wrap">
+        <div class="table-header"><h3>📋 订单列表</h3></div>
+        <table>
+          <thead>
+            <tr><th>订单号</th><th>套餐</th><th>金额</th><th>状态</th><th>支付时间</th><th>发放 Token</th></tr>
+          </thead>
+          <tbody id="orders-tbody">
+            <tr><td colspan="6" style="text-align:center;color:var(--text3);padding:32px">暂无订单数据</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 系统设置 -->
+    <div class="page" id="page-settings">
+      <div class="page-title">⚙️ 系统设置</div>
+      <div class="page-sub">配置支付接口与系统参数</div>
+
+      <div class="card">
+        <h3>💳 易支付 (EPay) 配置</h3>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div class="form-group"><label>EPay PID</label><input class="form-control" id="cfg-epay_pid" placeholder="商户 PID"/></div>
+          <div class="form-group"><label>EPay KEY</label><input class="form-control" id="cfg-epay_key" type="password" placeholder="商户密钥"/></div>
+          <div class="form-group" style="grid-column:1/-1"><label>EPay API 地址</label><input class="form-control" id="cfg-epay_api" placeholder="https://pay.xxx.com"/></div>
+          <div class="form-group"><label>支付成功通知地址 (notify_url)</label><input class="form-control" id="cfg-notify_url" placeholder="https://yourdomain.com/api/pay/notify"/></div>
+          <div class="form-group"><label>支付成功跳转地址 (return_url)</label><input class="form-control" id="cfg-return_url" placeholder="https://yourdomain.com/?order_id=xxx"/></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>🔑 管理员密钥</h3>
+        <div class="form-group">
+          <label>当前 Admin Key（只读，不可在此修改）</label>
+          <input class="form-control" id="cfg-admin_key_display" readonly style="font-family:monospace"/>
+        </div>
+      </div>
+
+      <button class="btn btn-primary" style="width:auto;padding:12px 32px" onclick="saveSettings()">💾 保存设置</button>
+    </div>
+
+  </div><!-- /content -->
+</div><!-- /layout -->
+
+<script>
+let ADMIN_KEY = '';
+let tokenPage = 1;
+
+// ── 登录 ────────────────────────────────────────────────────────────────────
+async function doLogin(){
+  const key = document.getElementById('login-key').value.trim();
+  if(!key) return;
+  const r = await fetch(`/api/admin/stats?admin_key=${encodeURIComponent(key)}`);
+  if(r.status === 403){
+    document.getElementById('login-err').style.display='block'; return;
+  }
+  ADMIN_KEY = key;
+  document.getElementById('login-overlay').style.display='none';
+  loadDashboard(); loadTokens(); loadBankInfo(); loadSettings();
+}
+
+// ── 导航 ─────────────────────────────────────────────────────────────────────
+function showPage(name, el){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(b=>b.classList.remove('active'));
+  document.getElementById('page-'+name).classList.add('active');
+  el.classList.add('active');
+  if(name==='dashboard') loadDashboard();
+  if(name==='tokens') loadTokens();
+  if(name==='bank') loadBankInfo();
+  if(name==='settings') loadSettings();
+}
+
+// ── Dashboard ────────────────────────────────────────────────────────────────
+async function loadDashboard(){
+  const r = await apiFetch('/api/admin/stats');
+  if(!r) return;
+  document.getElementById('s-total').textContent    = r.total_tokens;
+  document.getElementById('s-active').textContent   = r.active_tokens;
+  document.getElementById('s-searches').textContent = r.today_searches;
+  document.getElementById('s-revenue').textContent  = '¥'+r.revenue.toFixed(2);
+  document.getElementById('s-orders').textContent   = r.total_orders;
+  document.getElementById('s-bank').textContent     = r.public_bank;
+}
+
+// ── 卡密管理 ─────────────────────────────────────────────────────────────────
+document.getElementById('gen-type').addEventListener('change', function(){
+  document.getElementById('gen-days-wrap').style.display = this.value==='LIFETIME'?'none':'flex';
+});
+
+async function generateTokens(){
+  const type  = document.getElementById('gen-type').value;
+  const days  = parseInt(document.getElementById('gen-days').value);
+  const count = parseInt(document.getElementById('gen-count').value);
+  const note  = document.getElementById('gen-note').value;
+  const r = await apiFetch('/api/admin/tokens/generate',{
+    method:'POST', body:JSON.stringify({card_type:type,days,count,note})
+  });
+  if(!r) return;
+  const list = document.getElementById('token-list');
+  list.innerHTML = r.tokens.map(t=>
+    `<div class="token-item"><code>${t}</code><button class="btn btn-sm" style="background:none;color:var(--text3);width:auto;border:1px solid var(--border);padding:3px 10px" onclick="copy('${t}')">复制</button></div>`
+  ).join('');
+  document.getElementById('gen-result').style.display='block';
+  toast('✅ 成功生成 '+r.count+' 个卡密','success');
+  loadTokens();
+}
+
+let allGenTokens = [];
+function copyAll(){
+  const tokens = [...document.querySelectorAll('#token-list code')].map(c=>c.textContent).join('\n');
+  navigator.clipboard.writeText(tokens).then(()=>toast('📋 已复制全部卡密','success'));
+}
+
+async function loadTokens(page=1){
+  tokenPage = page;
+  const r = await apiFetch(`/api/admin/tokens?page=${page}&per_page=20`);
+  if(!r) return;
+  const tbody = document.getElementById('token-tbody');
+  tbody.innerHTML = r.items.map(t=>`
+    <tr>
+      <td><code style="font-size:11px">${t.token}</code></td>
+      <td>${t.card_type==='LIFETIME'?'<span class="badge badge-gold">买断</span>':'<span class="badge badge-blue">'+t.days+'天</span>'}</td>
+      <td>${t.is_active?'<span class="badge badge-green">有效</span>':'<span class="badge badge-red">禁用</span>'}</td>
+      <td style="font-size:11px;color:var(--text3)">${t.device_id?t.device_id.substring(0,20)+'...':'未激活'}</td>
+      <td style="font-size:11px;color:var(--text2)">${t.activated_at||'-'}</td>
+      <td style="font-size:11px;color:${t.expires_at?'var(--text2)':'var(--green)'}">${t.expires_at||'永久'}</td>
+      <td style="font-size:11px;color:var(--text3)">${t.note||'-'}</td>
+      <td>
+        <div style="display:flex;gap:6px">
+          ${t.device_id?`<button class="btn btn-sm" style="background:var(--gold2);color:var(--gold);border:1px solid var(--gold);width:auto;padding:5px 10px" onclick="unbind('${t.token}')">解绑</button>`:''}
+          <button class="btn btn-sm btn-danger" style="width:auto;padding:5px 10px" onclick="revoke('${t.token}')">吊销</button>
+        </div>
+      </td>
+    </tr>
+  `).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--text3);padding:32px">暂无卡密</td></tr>';
+
+  // 分页
+  const totalPages = Math.ceil(r.total / 20);
+  const pg = document.getElementById('token-pagination');
+  let pgHtml = '';
+  for(let i=1;i<=Math.min(totalPages,10);i++)
+    pgHtml += `<button class="page-btn${i===page?' active':''}" onclick="loadTokens(${i})">${i}</button>`;
+  pg.innerHTML = pgHtml;
+}
+
+async function unbind(token){
+  if(!confirm('确认解绑该卡密的设备？')) return;
+  await apiFetch('/api/admin/tokens/unbind',{method:'POST',body:JSON.stringify({token})});
+  toast('✅ 设备已解绑','success'); loadTokens(tokenPage);
+}
+async function revoke(token){
+  if(!confirm('确认吊销该卡密？操作不可撤销！')) return;
+  await apiFetch('/api/admin/tokens/revoke',{method:'POST',body:JSON.stringify({token})});
+  toast('✅ 卡密已吊销','success'); loadTokens(tokenPage);
+}
+
+// ── 题库管理 ─────────────────────────────────────────────────────────────────
+async function loadBankInfo(){
+  const r = await apiFetch('/api/bank/info');
+  if(r) document.getElementById('public-count').textContent = r.public;
+}
+
+// 拖拽上传
+const dropZone = document.getElementById('bank-drop');
+dropZone.addEventListener('dragover',e=>{e.preventDefault();dropZone.classList.add('drag')});
+dropZone.addEventListener('dragleave',()=>dropZone.classList.remove('drag'));
+dropZone.addEventListener('drop',e=>{
+  e.preventDefault(); dropZone.classList.remove('drag');
+  const file = e.dataTransfer.files[0];
+  if(file) doUploadBank(file);
+});
+
+function uploadBank(input){ if(input.files[0]) doUploadBank(input.files[0]); }
+
+async function doUploadBank(file){
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('token', 'admin');
+  fd.append('device_id', 'admin');
+  fd.append('target', 'public');
+  fd.append('admin_key', ADMIN_KEY);
+  const result = document.getElementById('bank-upload-result');
+  result.style.display='block';
+  result.innerHTML = '<span style="color:var(--text2)">⏳ 正在解析并导入题库...</span>';
+  try{
+    const r = await fetch('/api/bank/upload',{method:'POST',body:fd});
+    const data = await r.json();
+    if(data.success){
+      result.innerHTML = `<span style="color:var(--green)">✅ 成功导入 <strong>${data.imported}</strong> 道题目</span>`;
+      toast('✅ 题库导入成功：'+data.imported+' 题','success');
+      loadBankInfo();
+    }else{
+      result.innerHTML = `<span style="color:var(--red)">❌ 导入失败</span>`;
+    }
+  }catch(e){
+    result.innerHTML = `<span style="color:var(--red)">❌ 网络错误</span>`;
+  }
+}
+
+async function clearPublicBank(){
+  if(!confirm('确认清空全部公共题库？此操作不可撤销！')) return;
+  const r = await apiFetch(`/api/bank/clear?target=public&admin_key=${ADMIN_KEY}`,{method:'DELETE'});
+  if(r?.success){ toast('✅ 公共题库已清空','success'); loadBankInfo(); }
+}
+
+// ── 设置 ─────────────────────────────────────────────────────────────────────
+async function loadSettings(){
+  const r = await apiFetch('/api/admin/settings');
+  if(!r) return;
+  ['epay_pid','epay_key','epay_api','notify_url','return_url'].forEach(k=>{
+    const el = document.getElementById('cfg-'+k);
+    if(el) el.value = r[k]||'';
+  });
+  document.getElementById('cfg-admin_key_display').value = ADMIN_KEY;
+}
+
+async function saveSettings(){
+  const data = {};
+  ['epay_pid','epay_key','epay_api','notify_url','return_url'].forEach(k=>{
+    data[k] = document.getElementById('cfg-'+k)?.value||'';
+  });
+  const r = await apiFetch('/api/admin/settings',{method:'POST',body:JSON.stringify(data)});
+  if(r?.success) toast('✅ 设置已保存','success');
+}
+
+// ── 工具 ─────────────────────────────────────────────────────────────────────
+async function apiFetch(url, opts={}){
+  const headers = {'Content-Type':'application/json','X-Admin-Key':ADMIN_KEY,...(opts.headers||{})};
+  try{
+    const r = await fetch(url, {...opts, headers});
+    if(!r.ok){ toast('❌ API 错误: '+r.status,'error'); return null; }
+    return await r.json();
+  }catch(e){
+    toast('❌ 网络错误','error'); return null;
+  }
+}
+
+function copy(text){
+  navigator.clipboard.writeText(text).then(()=>toast('📋 已复制','success'));
+}
+
+function toast(msg, type='success'){
+  const el = document.createElement('div');
+  el.className = 'toast '+type;
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(()=>el.remove(), 3000);
+}
+</script>
+</body>
+</html>
