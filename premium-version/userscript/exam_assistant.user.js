@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         网页考试助手 Premium v55 - 云端自动搜题勾选全自动终极版
+// @name         网页考试助手 Premium v56 - 智能切题流水线与无缝云端版
 // @namespace    http://tampermonkey.net/
-// @version      55.0.0
-// @description  云端 WSS 极速搜题 + Token 一键激活 + 私有题库拖拽上传 + 全自动3秒切题 + 全平台(PC/Android/iOS)
+// @version      56.0.0
+// @description  云端 WSS/HTTP 极速搜题 + Token 一键激活 + 私有题库拖拽上传 + 全自动智能切题 + 全平台
 // @author       Antigravity
 // @match        *://*/*
 // @grant        GM_addStyle
@@ -10,6 +10,7 @@
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        unsafeWindow
+// @connect      175.178.78.88
 // @connect      *
 // @run-at       document-end
 // ==/UserScript==
@@ -286,8 +287,12 @@
         }
     }
 
-    // ===== 处理搜题结果（带防错位丢弃机制）=====
+    let isSearchingQuestion = false;
+    let autoNextTimer = null;
+
+    // ===== 处理搜题结果（带有防错位与智能流水线切题机制）=====
     function handleSearchResult(data, reqQuery) {
+        isSearchingQuestion = false;
         if (!data) {
             setDebug('❌ 返回数据为空');
             return;
@@ -302,8 +307,25 @@
 
         lastResult = data;
         renderAnswer(data);
-        if (data.found) {
-            setTimeout(() => autoCheck(data), 100);
+
+        // 自动勾选逻辑
+        if (data.found && autoCheckEnabled) {
+            setTimeout(() => {
+                autoCheck(data);
+                // 3s 全自动联动：完成搜题与勾选后，延时 1.5s 极速切到下一题
+                if (fullAutoEnabled) {
+                    clearTimeout(autoNextTimer);
+                    autoNextTimer = setTimeout(() => {
+                        switchToNextQuestion();
+                    }, 1500);
+                }
+            }, 120);
+        } else if (!data.found && fullAutoEnabled) {
+            // 题库未找到答案时，停留 2.5s 后切下一题
+            clearTimeout(autoNextTimer);
+            autoNextTimer = setTimeout(() => {
+                switchToNextQuestion();
+            }, 2500);
         }
     }
 
@@ -605,18 +627,9 @@
         searchQuestion(title);
     }
 
-    // 400ms 全局轮询搜题守护：无论是否全自动切题，都持续自动提取题干并搜题
+    // 400ms 全局轮询搜题守护：持续监控 DOM 自动识别新题干并极速搜题
     setInterval(() => {
         autoProcessCurrentQuestion();
-
-        // 仅在开启"3s全自动切题"时才自动切下一题
-        if (fullAutoEnabled) {
-            const now = Date.now();
-            if (now - lastSwitchTimestamp >= 3000 + 800) {
-                switchToNextQuestion();
-                lastSwitchTimestamp = now;
-            }
-        }
     }, 400);
 
     // ===== 题库上传功能 =====

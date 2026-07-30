@@ -11,10 +11,14 @@ def clean_text(text: str) -> str:
     """清洗题目文本，用于模糊匹配索引"""
     if not isinstance(text, str):
         text = str(text) if text else ""
-    text = re.sub(r'<[^>]+>', '', text)                          # 去 HTML 标签
-    text = re.sub(r'^[（(]?\d+[）).、\s]*', '', text)            # 去题号前缀
-    text = re.sub(r'[\s\n\r]', '', text)                         # 去空白
-    text = re.sub(r'[，。！？,!?（）()\u3002\uff01\uff1f]', '', text)  # 去标点
+    text = re.sub(r'<[^>]+>', '', text)                                      # 去 HTML 标签
+    text = re.sub(r'^\s*\d+[\s.、．：:]*', '', text)                           # 去题号数字
+    text = re.sub(r'(单选题|多选题|判断题|填空题)[：:\s]*', '', text)            # 去题型前缀
+    text = re.sub(r'根据题干信息.*?选择.*?答案[。！!\s]*', '', text)             # 去试题引导说明
+    text = re.sub(r'在选项中.*?选择[。！!\s]*', '', text)                        # 去试题引导说明2
+    text = re.sub(r'[（(]\s*\d+\s*分[）)]', '', text)                          # 去(1分)
+    text = re.sub(r'[\s\n\r]', '', text)                                     # 去空白
+    text = re.sub(r'[，。！？,!?（）()\u3002\uff01\uff1f]', '', text)              # 去标点
     return text.strip().lower()
 
 

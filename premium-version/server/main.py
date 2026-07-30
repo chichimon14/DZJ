@@ -85,7 +85,7 @@ app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 # 工具函数
 # ──────────────────────────────────────────────────────────────────────────────
 
-def fuzzy_search(query: str, token: str = None, threshold: int = 72) -> Optional[Dict]:
+def fuzzy_search(query: str, token: str = None, threshold: int = 55) -> Optional[Dict]:
     """
     双层模糊匹配搜题：
     1. 优先在用户私有题库中搜索
@@ -105,22 +105,22 @@ def fuzzy_search(query: str, token: str = None, threshold: int = 72) -> Optional
 
         if private_rows:
             private_titles = [r['title_clean'] for r in private_rows]
-            result = rf_process.extractOne(clean_q, private_titles, scorer=fuzz.ratio)
+            result = rf_process.extractOne(clean_q, private_titles, scorer=fuzz.WRatio)
             if result and result[1] >= threshold:
                 best = dict(private_rows[result[2]])
                 best['_source'] = 'private'
-                best['_score'] = result[1]
+                best['_score'] = round(result[1], 1)
                 return best
 
     # ── 第二层：公共题库（内存缓存）────────────────────────────────────────────
     if not PUBLIC_TITLES_CLEAN:
         return None
 
-    result = rf_process.extractOne(clean_q, PUBLIC_TITLES_CLEAN, scorer=fuzz.ratio)
+    result = rf_process.extractOne(clean_q, PUBLIC_TITLES_CLEAN, scorer=fuzz.WRatio)
     if result and result[1] >= threshold:
         best = dict(PUBLIC_BANK_CACHE[result[2]])
         best['_source'] = 'public'
-        best['_score'] = result[1]
+        best['_score'] = round(result[1], 1)
         return best
 
     return None
