@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         网页考试助手 Premium v79 - 顶级无缝重构恢复框体与物理点击大融合版
+// @name         网页考试助手 Premium v80 - 框体强效守护绝对挂载显现版
 // @namespace    http://tampermonkey.net/
-// @version      79.0.0
-// @description  云端 HTTP 纯GM直连 + 顶级作用域防护确保悬浮框体100%弹显 + 原生input四重物理点击解决47题 + 漏选补勾错选撤销正确不动 + 全平台
+// @version      80.0.0
+// @description  云端 HTTP 纯GM直连 + 5秒轮询强效守护保证悬浮框体100%强制挂载弹显 + 漏选补勾错选撤销正确不动 + 全平台
 // @author       Antigravity
 // @match        *://*/*
 // @grant        GM_addStyle
@@ -1072,9 +1072,24 @@
         }, { passive: true });
     }
 
+    // ===== 100% 确保框体必定挂载与显示的守护巡检 =====
+    function ensureUIExists() {
+        try {
+            if (!document.getElementById('exam-assistant-container')) {
+                createFloatingUI();
+            }
+            const el = document.getElementById('exam-assistant-container');
+            if (el) {
+                el.style.display = 'block';
+                el.style.visibility = 'visible';
+                el.style.opacity = '1';
+            }
+        } catch(e) {}
+    }
+
     // ===== 初始化 =====
     function init() {
-        buildUI();
+        ensureUIExists();
         if (container) {
             const header = document.getElementById('exam-assistant-header');
             if (header) makeDraggable(container, header);
@@ -1084,10 +1099,19 @@
         setTimeout(() => autoProcessCurrentQuestion(), 300);
     }
 
+    // 1. 立即尝试挂载
+    ensureUIExists();
+
+    // 2. 无论 DOM 处于什么状态，立即挂载事件监听
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', init);
     } else {
-        setTimeout(init, 800);
+        init();
     }
+
+    // 3. 轮询守护 5 秒，彻底解决框架延迟挂载导致的面板丢失
+    const uiGuardTimer = setInterval(ensureUIExists, 200);
+    setTimeout(() => clearInterval(uiGuardTimer), 5000);
+
 }
 })();
