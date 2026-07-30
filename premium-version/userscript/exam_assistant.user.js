@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         网页考试助手 Premium v53 - 全平台精准勾选修复版
+// @name         网页考试助手 Premium v54 - 全平台智能识别与自动搜题版
 // @namespace    http://tampermonkey.net/
-// @version      53.0.0
+// @version      54.0.0
 // @description  云端 WSS 极速搜题 + Token 一键激活 + 私有题库拖拽上传 + 全自动3秒切题 + 全平台(PC/Android/iOS)
 // @author       Antigravity
 // @match        *://*/*
@@ -455,23 +455,71 @@
     }
 
     function findQuestionTitle() {
+        // 1. Class / ID 选择器匹配
         const selectors = [
             '.question-title', '.q-title', '.stem', '.exam-title',
             '[class*="questionStem"]', '[class*="question_title"]',
             '[class*="ques-title"]', '[class*="title"][class*="ques"]',
             '[class*="stem"]', '[class*="question-content"]',
             '.exam-question-title', '.q_tit', '.ques_tit',
-            'h3', 'h4'
+            '.question-body', '.question-detail', '.question-head',
+            'h3', 'h4', 'h5'
         ];
         for (const sel of selectors) {
             const els = document.querySelectorAll(sel);
             for (const el of els) {
+                if (el.closest('#exam-assistant-container')) continue;
                 const text = el.textContent.trim();
-                if (el.offsetParent !== null && text.length > 6 && text.length < 500) {
+                if (el.offsetParent !== null && text.length > 5 && text.length < 1000) {
                     return el;
                 }
             }
         }
+
+        // 2. 智能特征文本检测（遍历页面节点）
+        const candidates = Array.from(document.querySelectorAll('body div, body p, body span, body td, body section, body h1, body h2, body h3, body h4'));
+        for (const el of candidates) {
+            if (el.closest('#exam-assistant-container')) continue;
+            if (el.offsetParent === null) continue;
+            if (el.children.length > 4) continue;
+
+            const text = el.textContent.trim();
+            if (text.length < 6 || text.length > 800) continue;
+
+            // 排除选项节点 (A. 保护区)
+            if (/^\s*[（(]?[A-Da-d][)）.、：:\s]/.test(text)) continue;
+
+            if (
+                /^\d+[.、．\s]+/.test(text) ||
+                /[（(]\s*[）)]/.test(text) ||
+                /(单选题|多选题|判断题|填空题)/.test(text) ||
+                /是指|下列|属于|关于|包括|正确的|错误的|依据|方式|原因|结果|要求|标准/.test(text)
+            ) {
+                return el;
+            }
+        }
+
+        // 3. 上下文逆向推导：找到选项节点，往上追溯前置题干元素
+        const options = findAllOptionElements();
+        if (options.length > 0) {
+            const firstOpt = options[0];
+            let curr = firstOpt;
+            while (curr) {
+                let prev = curr.previousElementSibling;
+                while (prev) {
+                    if (!prev.closest('#exam-assistant-container') && prev.offsetParent !== null) {
+                        const txt = prev.textContent.trim();
+                        if (txt.length >= 6 && txt.length <= 800 && !/^\s*[（(]?[A-Da-d][)）.、：:\s]/.test(txt)) {
+                            return prev;
+                        }
+                    }
+                    prev = prev.previousElementSibling;
+                }
+                curr = curr.parentElement;
+                if (curr === document.body) break;
+            }
+        }
+
         return null;
     }
 
@@ -486,7 +534,6 @@
         for (const el of elements) {
             const text = el.textContent.trim();
             const textLow = text.toLowerCase();
-            // 排除包含反向关键词的元素（防止"错误"里误匹配"对"）
             const hasAnti = antiKw.some(k => textLow.includes(k.toLowerCase()));
             if (!hasAnti && keywords.some(k => textLow === k.toLowerCase() || textLow.includes(k.toLowerCase()))) {
                 const input = el.querySelector('input') || (el.tagName === 'INPUT' ? el : null)
@@ -499,7 +546,7 @@
         setDebug(`⚠️ 判断题未找到选项: ${isCorrect ? '正确' : '错误'}`);
     }
 
-    // ===== 3 秒全自动切题（继承 v51 守护机制）=====
+    // ===== 3 秒全自动切题与全局守护机制 =====
     function getCurrentQuestionNumber() {
         const candidates = document.querySelectorAll('.question-item.active, .cur-question, [class*="current"][class*="question"]');
         for (const el of candidates) {
@@ -519,52 +566,48 @@
         const curNum = getCurrentQuestionNumber();
         if (curNum) {
             const next = document.querySelector(`[data-index="${curNum}"], [data-num="${curNum + 1}"]`);
-            if (next) { singleClick(next); return; }
+            if (next) { triggerFullClick(next); return; }
         }
 
         // 策略二：独立"下一题"按钮
         const btns = document.querySelectorAll('button, .btn, [class*="next"], [class*="下一题"]');
         for (const btn of btns) {
             const text = btn.textContent.trim();
-            if (/下一题|next/i.test(text) && btn.offsetParent) { singleClick(btn); return; }
+            if (/下一题|next/i.test(text) && btn.offsetParent) { triggerFullClick(btn); return; }
         }
 
         // 策略三：全局叶子节点兜底
         const allLinks = document.querySelectorAll('a, li, div[onclick]');
         for (const el of allLinks) {
-            if (/下一题|下一道|next/i.test(el.textContent) && el.offsetParent) { singleClick(el); return; }
+            if (/下一题|下一道|next/i.test(el.textContent) && el.offsetParent) { triggerFullClick(el); return; }
         }
     }
 
     function autoProcessCurrentQuestion() {
-        const now = Date.now();
-        if (now - lastAutoProcessTime < 1500) return;
-        lastAutoProcessTime = now;
-
-        // 自动提取题干
         const titleEl = findQuestionTitle();
         if (!titleEl) return;
         const title = titleEl.textContent.trim();
+        if (!title || title.length < 4) return;
+
         const hash = titleHash(title);
         if (hash === currentTitleHash) return;
         currentTitleHash = hash;
         searchQuestion(title);
     }
 
-    // findQuestionTitle 已在上方定义，此处移除重复定义
-
-    // 300ms 心跳守护
+    // 400ms 全局轮询搜题守护：无论是否全自动切题，都持续自动提取题干并搜题
     setInterval(() => {
-        if (!fullAutoEnabled) return;
-        const now = Date.now();
-        if (now - lastSwitchTimestamp >= 3000) {
-            autoProcessCurrentQuestion();
+        autoProcessCurrentQuestion();
+
+        // 仅在开启"3s全自动切题"时才自动切下一题
+        if (fullAutoEnabled) {
+            const now = Date.now();
             if (now - lastSwitchTimestamp >= 3000 + 800) {
                 switchToNextQuestion();
                 lastSwitchTimestamp = now;
             }
         }
-    }, 300);
+    }, 400);
 
     // ===== 题库上传功能 =====
     function uploadBankFile(file) {
