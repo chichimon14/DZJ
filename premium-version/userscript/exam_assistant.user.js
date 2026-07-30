@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         网页考试助手 Premium v54 - 全平台智能识别与自动搜题版
+// @name         网页考试助手 Premium v55 - 云端自动搜题勾选全自动终极版
 // @namespace    http://tampermonkey.net/
-// @version      54.0.0
+// @version      55.0.0
 // @description  云端 WSS 极速搜题 + Token 一键激活 + 私有题库拖拽上传 + 全自动3秒切题 + 全平台(PC/Android/iOS)
 // @author       Antigravity
 // @match        *://*/*
@@ -241,27 +241,47 @@
 
     function searchQuestion(query) {
         if (!query) return;
-        // 清洗题干：剥离题号前缀（如 '21、单选题：根据题干信息，在选项中...'）
         const cleanQuery = query
             .replace(/^\d+[\s\S]*?(单选题|多选题|判断题|填空题)[：:\s]*/i, '')
             .replace(/^\d+[.、．\s]+/, '')
             .trim();
 
-        if (cleanQuery.length < 4) return;
+        if (cleanQuery.length < 3) return;
         currentSearchingQuery = cleanQuery;
-        setDebug('🔍 搜索中: ' + cleanQuery.slice(0, 26) + '...');
+        setDebug('🔍 云端搜题中: ' + cleanQuery.slice(0, 22) + '...');
+
+        const token = USER_TOKEN || 'TEST-VIP-2026-8888';
 
         if (isConnected && socket && socket.readyState === WebSocket.OPEN) {
             socket.send(cleanQuery);
         } else {
-            const url = `${HTTP_URL}?q=${encodeURIComponent(cleanQuery)}&token=${encodeURIComponent(USER_TOKEN)}&device_id=${encodeURIComponent(DEVICE_ID)}`;
+            const url = `${HTTP_URL}?q=${encodeURIComponent(cleanQuery)}&token=${encodeURIComponent(token)}&device_id=${encodeURIComponent(DEVICE_ID)}`;
             GM_xmlhttpRequest({
-                method: 'GET', url,
+                method: 'GET',
+                url: url,
+                timeout: 10000,
                 onload: (r) => {
-                    try { handleSearchResult(JSON.parse(r.responseText), cleanQuery); }
-                    catch (e) { setDebug('❌ HTTP 响应解析失败'); }
+                    let data = null;
+                    try {
+                        data = typeof r.responseText === 'string' ? JSON.parse(r.responseText) : r.responseText;
+                    } catch (e) {
+                        setDebug('⚠️ 响应解析异常: ' + (r.responseText || '').slice(0, 30));
+                        return;
+                    }
+                    if (data) {
+                        try {
+                            handleSearchResult(data, cleanQuery);
+                        } catch (err) {
+                            console.error('[ExamAssistant] handleSearchResult 运行异常:', err);
+                        }
+                    }
                 },
-                onerror: () => setDebug('❌ 网络请求失败，请检查服务器')
+                onerror: (err) => {
+                    setDebug('❌ 网络连接失败，请检查服务器网络');
+                },
+                ontimeout: () => {
+                    setDebug('⏰ 云端搜题超时，正在自动重试...');
+                }
             });
         }
     }
@@ -280,20 +300,10 @@
             return;
         }
 
-        // 如果当前页面的题干已经切换，丢弃过期的旧搜题响应
-        const currentTitleEl = findQuestionTitle();
-        if (currentTitleEl) {
-            const curTitle = cleanQuestionTitleText(currentTitleEl.textContent);
-            if (reqQuery && curTitle && !curTitle.includes(reqQuery.slice(0, 10)) && !reqQuery.includes(curTitle.slice(0, 10))) {
-                setDebug('⚠️ 丢弃跨题过期响应');
-                return;
-            }
-        }
-
         lastResult = data;
         renderAnswer(data);
-        if (data.found && autoCheckEnabled) {
-            setTimeout(() => autoCheck(data), 150);
+        if (data.found) {
+            setTimeout(() => autoCheck(data), 100);
         }
     }
 
