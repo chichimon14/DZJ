@@ -52,13 +52,14 @@ apt-get update -qq
 apt-get install -y -qq python3 python3-pip python3-venv nginx certbot python3-certbot-nginx git curl
 
 # ── 2. 创建应用目录与复制文件 ───────────────────────────────────────────────
-log_info "📁 准备应用目录: $APP_DIR"
+log_info "📁 同步最新代码到应用目录: $APP_DIR"
 mkdir -p $APP_DIR
 
-# 如果当前脚本在 Git 目录中，复制 server 文件夹
+# 查找真实代码源目录并全量同步覆盖到 /opt/exam-assistant/
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 if [ -d "$SCRIPT_DIR/server" ]; then
-  cp -r "$SCRIPT_DIR/server/." "$APP_DIR/"
+  cp -rf "$SCRIPT_DIR/server/." "$APP_DIR/"
+  log_info "✅ 代码文件已成功更新覆写到 $APP_DIR"
 fi
 
 # ── 3. 配置 Python 虚拟环境 ──────────────────────────────────────────────────

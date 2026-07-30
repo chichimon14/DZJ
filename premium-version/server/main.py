@@ -270,45 +270,54 @@ async def upload_bank(
     target: str = Form("private"),  # private | public (public 需要管理员权限)
     admin_key: str = Form(""),
 ):
-    # 鉴权
-    if target == "public":
-        if not auth.verify_admin(admin_key):
-            raise HTTPException(403, "上传公共题库需要管理员权限")
-    else:
-        try:
-            auth.verify_token(token, device_id)
-        except auth.TokenError as e:
-            raise HTTPException(401, e.msg)
-
-    # 读取文件
-    content = await file.read()
-    suffix = Path(file.filename).suffix.lower()
-    if suffix not in ('.xlsx', '.xls', '.csv'):
-        raise HTTPException(400, "仅支持 .xlsx / .xls / .csv 格式")
-
-    # 写入临时文件后解析（pandas 需要文件路径或 BytesIO）
-    import tempfile
-    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-        tmp.write(content)
-        tmp_path = tmp.name
-
     try:
-        rows = exam_parser.parse_excel(tmp_path, token=(token if target == "private" else None))
-    except Exception as e:
-        os.unlink(tmp_path)
-        raise HTTPException(400, f"题库解析失败: {e}")
-    finally:
-        os.unlink(tmp_path)
+        # 鉴权
+        if target == "public":
+            if not auth.verify_admin(admin_key):
+                return JSONResponse({"success": False, "msg": "管理员权限不足，请先登录后台"}, status_code=403)
+        else:
+            try:
+                auth.verify_token(token, device_id)
+            except auth.TokenError as e:
+                return JSONResponse({"success": False, "msg": e.msg}, status_code=401)
 
-    conn = models.get_db()
-    is_private = (target == "private")
-    count = exam_parser.import_to_db(conn, rows, is_private=is_private, source=token if is_private else "admin")
-    conn.close()
+        # 读取文件
+        content = await file.read()
+        suffix = Path(file.filename).suffix.lower()
+        if suffix not in ('.xlsx', '.xls', '.csv'):
+            return JSONResponse({"success": False, "msg": "仅支持 .xlsx / .xls / .csv 格式文件"}, status_code=400)
 
-    if not is_private:
-        reload_public_cache()
+        # 写入临时文件后解析
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+            tmp.write(content)
+            tmp_path = tmp.name
 
-    return {"success": True, "imported": count, "target": target}
+        try:
+            rows = exam_parser.parse_excel(tmp_path, token=(token if target == "private" else None))
+        except Exception as e:
+            traceback.print_exc()
+            return JSONResponse({"success": False, "msg": f"Excel 解析错误: {str(e)}"}, status_code=400)
+        finally:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+
+        if not rows:
+            return JSONResponse({"success": False, "msg": "题库文件中未解析到有效数据，请检查表格列名"}, status_code=400)
+
+        conn = models.get_db()
+        is_private = (target == "private")
+        count = exam_parser.import_to_db(conn, rows, is_private=is_private, source=token if is_private else "admin")
+        conn.close()
+
+        if not is_private:
+            reload_public_cache()
+
+        return {"success": True, "imported": count, "target": target}
+
+    except Exception as g_err:
+        traceback.print_exc()
+        return JSONResponse({"success": False, "msg": f"系统内部异常: {str(g_err)}"}, status_code=500)
 
 
 @app.delete("/api/bank/clear")
