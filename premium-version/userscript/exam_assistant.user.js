@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         网页考试助手 Premium v71 - 彻底修复数据库WRONG脏数据导致无法打钩Bug
+// @name         网页考试助手 Premium v72 - 全量修正数据库脏数据大获全胜版
 // @namespace    http://tampermonkey.net/
-// @version      71.0.0
-// @description  云端 HTTP 纯GM直连 + 智能识别单选/多选题数据库 WRONG/CORRECT 脏数据并自动安全打钩 + 全平台
+// @version      72.0.0
+// @description  云端 HTTP 纯GM直连 + 配合云端修补后的数据库精准秒回 A/B/C/D 正确答案 + 全平台
 // @author       Antigravity
 // @match        *://*/*
 // @grant        GM_addStyle
@@ -476,15 +476,8 @@
             return;
         }
 
-        // 2. 选择题 (单选/多选)：提取目标字母序列 (如 ['B', 'C', 'D'])
+        // 2. 选择题 (单选/多选)：提取目标字母序列 (如 ['A'], ['C'], ['B', 'C', 'D'])
         let answerLetters = (data.answer || '').toUpperCase().split('').filter(c => /[A-D]/.test(c));
-
-        // 智能容错：处理数据库中单选题答案存成 WRONG / CORRECT 脏数据的极端情况
-        if (answerLetters.length === 0) {
-            if (/WRONG|FALSE|错/i.test(data.answer)) answerLetters = ['B'];
-            else if (/CORRECT|TRUE|对/i.test(data.answer)) answerLetters = ['A'];
-        }
-
         if (answerLetters.length === 0) return;
 
         const opts = data.options || {};
