@@ -101,6 +101,12 @@ def init_db():
     """)
     c.execute("CREATE INDEX IF NOT EXISTS idx_public_title ON public_bank(title_clean)")
 
+    # 自动数据库迁移：为旧版数据库自动补全 batch_id 字段
+    try:
+        c.execute("ALTER TABLE public_bank ADD COLUMN batch_id INTEGER DEFAULT 0")
+    except Exception:
+        pass
+
     # ── 私有题库表 ────────────────────────────────────────────────────────────
     c.execute("""
         CREATE TABLE IF NOT EXISTS private_bank (
