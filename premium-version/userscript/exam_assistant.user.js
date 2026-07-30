@@ -460,43 +460,44 @@
     function autoCheck(data) {
         if (!data || !data.found) return;
 
-        const ansStr = (data.answer || '').toString().trim().toUpperCase();
-        const isJudgeType = data.q_type === 'judge' || /^(WRONG|CORRECT|TRUE|FALSE|对|错|√|×)$/i.test(ansStr);
-
-        if (isJudgeType) {
-            autoCheckJudge(ansStr);
-            return;
-        }
-
-        const answerLetters = (data.answer || '').toUpperCase().split('').filter(c => /[A-D]/.test(c));
-        if (answerLetters.length === 0) return;
-
-        const opts = data.options || {};
         const elements = findAllOptionElements();
-
         if (elements.length === 0) {
             setDebug(`⚠️ 找到了答案 [${data.answer}] 但未抓取到选项 DOM`);
             return;
         }
 
-        let matchedCount = 0;
-        const letterMap = { 'A': 0, 'B': 1, 'C': 2, 'D': 3 };
+        // 1. 判断网页上的真实题型（约束防错位：网页写单选/多选或选项>2个的，绝不当判断题处理！）
+        const mainCardText = document.querySelector('form, section, div[class*="question"], div[class*="paper"]') ?.textContent || document.body.textContent || '';
+        const isWebJudge = (/判断题/i.test(mainCardText) && !/单选题|多选题/i.test(mainCardText)) 
+            || (elements.length === 2 && /^(对|错|正确|错误|a\.?\s*对|b\.?\s*错)$/i.test(elements[0].textContent.trim().toLowerCase()));
+
+        if (isWebJudge) {
+            autoCheckJudge(data.answer);
+            return;
+        }
+
+        // 2. 选择题 (单选/多选)：提取目标字母序列 (如 ['B', 'C', 'D'])
+        let answerLetters = (data.answer || '').toUpperCase().split('').filter(c => /[A-D]/.test(c));
+        if (answerLetters.length === 0) return;
+
+        const opts = data.options || {};
+        let queue = [];
 
         answerLetters.forEach(letter => {
             const targetText = opts[letter] ? cleanOptionText(opts[letter]) : '';
             let hitEl = null;
 
-            // 方法 1: 精确文本内容匹配 (如 "四级")
+            // 方法 A: 选项内容精准匹配 (优先)
             if (targetText && targetText.length >= 1) {
                 for (const el of elements) {
                     const cleaned = cleanOptionText(el.textContent);
-                    if (cleaned.includes(targetText)) {
+                    if (cleaned.includes(targetText.slice(0, 10)) || targetText.includes(cleaned.slice(0, 10))) {
                         hitEl = el; break;
                     }
                 }
             }
 
-            // 方法 2: 字母前缀匹配 (如 "D." 或 "D、")
+            // 方法 B: 前缀字母匹配 (如 "B." / "B、")
             if (!hitEl) {
                 const letterRegex = new RegExp(`^\\s*[（(]?${letter}[)）.、：:\\s]`);
                 for (const el of elements) {
@@ -506,23 +507,26 @@
                 }
             }
 
-            // 方法 3: 索引位置兜底 (A->0, B->1, C->2, D->3)
+            // 方法 C: 索引兜底 (A->0, B->1, C->2, D->3)
             if (!hitEl) {
+                const letterMap = { 'A': 0, 'B': 1, 'C': 2, 'D': 3 };
                 const idx = letterMap[letter];
                 if (idx !== undefined && elements[idx]) hitEl = elements[idx];
             }
 
             if (hitEl) {
-                smartClickOption(hitEl);
-                matchedCount++;
+                queue.push(hitEl);
             }
         });
 
-        if (matchedCount > 0) {
-            setDebug(`✅ 已自动勾选正确答案: ${data.answer}`);
-        } else {
-            setDebug(`⚠️ 找到答案 (${data.answer}) 但全仿真点击未触发选框`);
-        }
+        // 3. 多选题/单选题 90ms 延时队列依次排队触发点击，完美适配 Vue / ElementUI 状态响应
+        queue.forEach((el, index) => {
+            setTimeout(() => {
+                smartClickOption(el);
+            }, index * 90);
+        });
+
+        setDebug(`✅ 已自动排队勾选答案 [${answerLetters.join('')}] (${queue.length} 个选项已触发)`);
     }
 
     // 兼容旧代码引用
