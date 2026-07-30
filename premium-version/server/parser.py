@@ -4,7 +4,7 @@
 """
 import re
 import pandas as pd
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 
 def clean_text(text: str) -> str:
