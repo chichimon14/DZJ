@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         网页考试助手 Premium v63 - 彻底修复cleanOptionText未定义Bug全能打通版
+// @name         网页考试助手 Premium v64 - 终极完结防崩溃稳定版
 // @namespace    http://tampermonkey.net/
-// @version      63.0.0
-// @description  云端 HTTP 纯GM极速直连 + 彻底修复 cleanOptionText 未定义 Bug + 强制无条件自动勾选 + 全平台
+// @version      64.0.0
+// @description  云端 HTTP 纯GM极速直连 + 彻底修复 lastResult 未定义 Bug + 强制无条件自动勾选 + 全平台
 // @author       Antigravity
 // @match        *://*/*
 // @grant        GM_addStyle
@@ -61,6 +61,7 @@
     let lastAutoProcessTime = 0;
     let activeTab          = 'search';   // 'search' | 'settings'
     let tokenStatus        = null;
+    let lastResult         = null;
 
     // ===== CSS =====
     const cssText = `
