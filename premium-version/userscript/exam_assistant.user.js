@@ -19,14 +19,18 @@
 
     const win = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
-    // ===== 云端服务器配置（部署后修改为你的域名）=====
-    const CLOUD_DOMAIN = GM_getValue('cloud_domain', 'your-domain.com');  // 部署后替换
-    const WSS_URL  = `wss://${CLOUD_DOMAIN}/ws/search`;
-    const HTTP_URL = `https://${CLOUD_DOMAIN}/api/search`;
-    const BANK_UPLOAD_URL = `https://${CLOUD_DOMAIN}/api/bank/upload`;
-    const BANK_CLEAR_URL  = `https://${CLOUD_DOMAIN}/api/bank/clear`;
-    const BANK_INFO_URL   = `https://${CLOUD_DOMAIN}/api/bank/info`;
-    const TOKEN_INFO_URL  = `https://${CLOUD_DOMAIN}/api/token/info`;
+    // ===== 云端服务器配置 =====
+    const CLOUD_DOMAIN = GM_getValue('cloud_domain', '175.178.78.88');
+    const isIP = /^\d+\.\d+\.\d+\.\d+/.test(CLOUD_DOMAIN);
+    const WS_SCHEME   = (location.protocol === 'https:' && !isIP) ? 'wss://' : 'ws://';
+    const HTTP_SCHEME = (location.protocol === 'https:' && !isIP) ? 'https://' : 'http://';
+
+    const WSS_URL         = `${WS_SCHEME}${CLOUD_DOMAIN}/ws/search`;
+    const HTTP_URL        = `${HTTP_SCHEME}${CLOUD_DOMAIN}/api/search`;
+    const BANK_UPLOAD_URL = `${HTTP_SCHEME}${CLOUD_DOMAIN}/api/bank/upload`;
+    const BANK_CLEAR_URL  = `${HTTP_SCHEME}${CLOUD_DOMAIN}/api/bank/clear`;
+    const BANK_INFO_URL   = `${HTTP_SCHEME}${CLOUD_DOMAIN}/api/bank/info`;
+    const TOKEN_INFO_URL  = `${HTTP_SCHEME}${CLOUD_DOMAIN}/api/token/info`;
 
     // ===== 持久化存储的配置项 =====
     let USER_TOKEN   = GM_getValue('user_token', '');
