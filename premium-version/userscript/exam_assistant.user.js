@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         网页考试助手 Premium v76 - 修复闭包语法匹配恢复框体正常显示版
+// @name         网页考试助手 Premium v77 - 基于v74准确版极简加固防覆盖打钩版
 // @namespace    http://tampermonkey.net/
-// @version      76.0.0
-// @description  云端 HTTP 纯GM直连 + 修复最外层 IIFE 闭合语法 + 框体恢复正常弹显 + 智能补全未勾选项 + 全平台
+// @version      77.0.0
+// @description  云端 HTTP 纯GM直连 + 绝对继承 v74 完美稳定架构 + 极简增加 is-checked 防覆盖防破坏已答题目 + 全平台
 // @author       Antigravity
 // @match        *://*/*
 // @grant        GM_addStyle
@@ -377,64 +377,33 @@
     function smartClickOption(targetEl) {
         if (!targetEl) return false;
 
-    // ===== 判定选项 DOM 节点当前是否已被勾选 =====
-    function isOptionChecked(el) {
-        if (!el) return false;
+        // 寻找实际内部 input
+        const input = targetEl.querySelector('input') || (targetEl.tagName === 'INPUT' ? targetEl : null);
 
-        // 1. 检查内部原生 input
-        const input = el.querySelector('input') || (el.tagName === 'INPUT' ? el : null);
-        if (input && input.checked) return true;
-
-        // 2. 检查 ElementUI / iView / Vue 的 checked 类选择器 (如 is-checked, checked)
-        const isCheckedClass = el.classList.contains('is-checked') ||
-                               el.classList.contains('checked') ||
-                               !!el.querySelector('.is-checked, .checked, [class*="checked"]');
-        if (isCheckedClass) return true;
-
-        // 3. aria-checked 属性
-        if (el.getAttribute('aria-checked') === 'true' || input?.getAttribute('aria-checked') === 'true') return true;
-
-        return false;
-    }
-
-    // ===== 极速全仿真单节点智能点击（只补全未勾选的，已勾选的绝不再重复点击）=====
-    function smartClickOption(targetEl, shouldBeChecked = true) {
-        if (!targetEl) return false;
-
-        const currentChecked = isOptionChecked(targetEl);
-
-        // 🌟 核心防破坏逻辑：若预期要勾选，且页面上已经处于勾选状态，直接返回 true，绝对不再重复点击！
-        if (shouldBeChecked && currentChecked) {
-            setDebug('🔒 对应选项已被勾选，保留不重复点击');
+        // 如果已处于勾选状态 (原生 checked 或 ElementUI is-checked)，切勿重复点击（防翻回已做题破坏答案）
+        if (targetEl.classList.contains('is-checked') || targetEl.classList.contains('checked') || (input && input.checked)) {
+            setDebug('🔒 该选项已被勾选，无需重复点击');
             return true;
         }
 
-        // 若预期要取消，且页面上本身就没勾选，也无需重复点击
-        if (!shouldBeChecked && !currentChecked) {
-            return true;
-        }
-
-        // 寻找实际点击目标（优先 ElementUI 的 label 或原生 input）
-        const input = targetEl.querySelector('input[type="checkbox"], input[type="radio"]') 
-            || (targetEl.tagName === 'INPUT' ? targetEl : null);
-
-        const clickTarget = targetEl.closest('label') || targetEl;
+        // 精确定位唯一的点击节点（优先容器，没有则 input）
+        const clickNode = (targetEl.tagName === 'INPUT' ? targetEl : null) 
+            || targetEl.querySelector('label') 
+            || targetEl.querySelector('[class*="check"], [class*="radio"], [class*="box"]') 
+            || targetEl;
 
         try {
-            // 原生 click 优先触发
-            if (input && typeof input.click === 'function') {
-                input.click();
-            } else if (typeof clickTarget.click === 'function') {
-                clickTarget.click();
+            ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(evtType => {
+                const evt = new MouseEvent(evtType, { bubbles: true, cancelable: true, view: win });
+                clickNode.dispatchEvent(evt);
+            });
+            if (typeof clickNode.click === 'function' && clickNode !== targetEl) {
+                clickNode.click();
             }
 
-            // 补发仿真事件
-            const evtOpts = { bubbles: true, cancelable: true, view: win };
-            clickTarget.dispatchEvent(new MouseEvent('mousedown', evtOpts));
-            clickTarget.dispatchEvent(new MouseEvent('mouseup', evtOpts));
-            clickTarget.dispatchEvent(new MouseEvent('click', evtOpts));
-
+            // 同步触发 Vue / ElementUI 状态绑定的 change 与 input 事件
             if (input) {
+                input.checked = true;
                 input.dispatchEvent(new Event('change', { bubbles: true }));
                 input.dispatchEvent(new Event('input', { bubbles: true }));
             }
@@ -444,7 +413,7 @@
         }
     }
 
-    function triggerFullClick(el) { return smartClickOption(el, true); }
+    function triggerFullClick(el) { return smartClickOption(el); }
 
     // ===== 通用选项查找（三层策略）=====
     function findAllOptionElements() {
@@ -551,17 +520,18 @@
             }
         });
 
-        // 3. 多选题/单选题 180ms 延时队列依次排队触发点击，智能只补全未勾选选项
+        // 3. 多选题/单选题 180ms 延时队列依次排队触发点击，完美适配 Vue / ElementUI 状态响应
+        const ALL_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F'];
         queue.forEach((el, index) => {
             const delay = index * 180;
             setTimeout(() => {
-                smartClickOption(el, true);
+                smartClickOption(el);
             }, delay);
         });
 
-        setDebug(`✅ 已智能匹配补全答案 [${answerLetters.join('')}] (${queue.length} 个选项响应)`);
+        setDebug(`✅ 已排队勾选答案 [${answerLetters.join('')}] (${queue.length} 个选项已触达)`);
 
-        // 全自动切题安全延时
+        // 🌟 关键修复：全自动切题必须在全部选项排队勾选完毕后 +2.2 秒才进行安全切题！
         if (fullAutoEnabled) {
             clearTimeout(autoNextTimer);
             const totalWaitTime = (queue.length * 180) + 2200;
@@ -1102,5 +1072,4 @@
         setTimeout(init, 800);
     }
 
-}
 })();
