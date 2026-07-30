@@ -95,22 +95,25 @@ def parse_excel(file_path: str, token: str = None) -> List[Dict[str, Any]]:
     df = df.fillna('')
     columns = [str(c).strip() for c in df.columns]
 
-    # ── 列名自动映射 ─────────────────────────────────────────────────────────
+    # ── 列名自动映射（智能无视空格与大小写）─────────────────────────────────
     def find_col(keywords: List[str], exclude: List[str] = None) -> Optional[str]:
         for col in columns:
-            if exclude and any(ex in col for ex in exclude):
+            col_str = str(col).strip()
+            if exclude and any(ex in col_str for ex in exclude):
                 continue
+            col_clean = re.sub(r'[\s_]', '', col_str).upper()
             for kw in keywords:
-                if kw in col:
+                kw_clean = re.sub(r'[\s_]', '', kw).upper()
+                if kw_clean == col_clean or kw_clean in col_clean:
                     return col
         return None
 
     col_title  = find_col(['题干', '试题内容', '题目', '问题'])
     col_answer = find_col(['答案'], exclude=['详细', '解析'])
-    col_opt_a  = find_col(['选项A', '选项 a', '选项_A', 'A选项'])
-    col_opt_b  = find_col(['选项B', '选项 b', '选项_B', 'B选项'])
-    col_opt_c  = find_col(['选项C', '选项 c', '选项_C', 'C选项'])
-    col_opt_d  = find_col(['选项D', '选项 d', '选项_D', 'D选项'])
+    col_opt_a  = find_col(['选项A', '选项 A', 'A选项', '选项_A', 'A'])
+    col_opt_b  = find_col(['选项B', '选项 B', 'B选项', '选项_B', 'B'])
+    col_opt_c  = find_col(['选项C', '选项 C', 'C选项', '选项_C', 'C'])
+    col_opt_d  = find_col(['选项D', '选项 D', 'D选项', '选项_D', 'D'])
     col_detail = find_col(['详细答案', '解析', '选项'])
 
     # 位置兜底规则

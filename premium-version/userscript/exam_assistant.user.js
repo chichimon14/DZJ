@@ -364,6 +364,7 @@
         answerLetters.forEach(letter => {
             const targetText = opts[letter] ? cleanOptionText(opts[letter]) : '';
 
+            // 优先遍历 DOM 比对
             for (const el of elements) {
                 const raw = el.textContent.trim();
                 const cleaned = cleanOptionText(raw);
@@ -372,7 +373,11 @@
                 const elLetter = letterMatch ? letterMatch[1].toUpperCase() : '';
 
                 let matched = false;
+
+                // 条件 1: 选项字母直接匹配 (例如 'A. 国务院')
                 if (elLetter && elLetter === letter) matched = true;
+
+                // 条件 2: 选项内容文本包含匹配 (例如 '国务院')
                 if (targetText && targetText.length >= 2 && cleaned.includes(targetText.slice(0, 6))) matched = true;
 
                 if (matched) {
@@ -385,8 +390,21 @@
             }
         });
 
+        // 兜底方案：如果页面选项既没带字母前缀又没匹配到文本，根据选项顺序索引兜底 (A->0, B->1, C->2, D->3)
+        if (matchedCount === 0 && elements.length >= 2) {
+            const letterMap = { 'A': 0, 'B': 1, 'C': 2, 'D': 3 };
+            answerLetters.forEach(letter => {
+                const idx = letterMap[letter];
+                if (idx !== undefined && elements[idx]) {
+                    const input = elements[idx].querySelector('input') || elements[idx];
+                    triggerFullClick(input);
+                    matchedCount++;
+                }
+            });
+        }
+
         if (matchedCount > 0) setDebug(`✅ 已自动勾选答案: ${data.answer}`);
-        else setDebug(`⚠️ 勾选未命中，答案为: ${data.answer}`);
+        else setDebug(`⚠️ 找到答案 (${data.answer}) 但未匹配到选框`);
     }
 
     function getVisibleOptionElements() {
