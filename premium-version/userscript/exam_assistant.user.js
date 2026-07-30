@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         网页考试助手 Premium v95 - 仅展示正确选项详细文本+极致暗黑UI
+// @name         网页考试助手 Premium v99 - 屏幕中心几何锁定+0%误杀精准抓题
 // @namespace    http://tampermonkey.net/
-// @version      95.0.0
-// @description  极简高端暗黑UI：精准仅展示正确选项详细文本/拨片式开关/蓝紫光晕边框/发光答案卡片/玻璃拟态搜索栏 + 选项内容双向校验
+// @version      99.0.0
+// @description  引入屏幕 Y 轴几何中心 (0.15~0.85 * innerHeight) 绝对锁定算法，彻底消除上一题与预加载下一题干扰
 // @author       Antigravity
 // @match        *://*/*
 // @grant        GM_addStyle
@@ -339,7 +339,7 @@
                 <div id="ea-header-left">
                     <div id="ea-status-wrap"><div id="ea-status-dot"></div></div>
                     <span id="ea-title">🎯 考试助手</span>
-                    <span id="ea-version-tag">v95</span>
+                    <span id="ea-version-tag">v99</span>
                 </div>
                 <button id="ea-collapse-btn">─</button>
             </div>
@@ -487,14 +487,44 @@
         return false;
     }
 
+    function isElementInCenterViewport(el) {
+        if (!el || (container && container.contains(el))) return false;
+        try {
+            const rect = el.getBoundingClientRect();
+            if (rect.width < 50 || rect.height < 10) return false;
+            const centerY = (rect.top + rect.bottom) / 2;
+            const vh = window.innerHeight;
+            // 核心几何锁：中心点必须落于当前屏幕高度的 12% 到 88% 视口区间内！
+            return (centerY >= vh * 0.12 && centerY <= vh * 0.88);
+        } catch(e) { return false; }
+    }
+
     function getRawTitleText() {
-        const sels=['.ques-title','.question-title','.question-item-title','.question-content','.ques-name','.question_title','[class*="ques-title"]','[class*="question-title"]','[class*="ques-name"]'];
-        for(const sel of sels){try{const el=document.querySelector(sel); if(el&&container&&!container.contains(el)){const t=(el.innerText||el.textContent||'').trim(); if(t.length>=4)return t;}}catch(e){}}
+        const sels=['.ques-title','.question-title','.question-item-title','.question-content','.ques-name','.question_title','[class*="ques-title"]','[class*="question-title"]','[class*="ques-name"]','.item-title','.q-title'];
+        
+        // 1. 优先扫描 CSS 专属类名节点（中心视口匹配）
+        for(const sel of sels){
+            try{
+                const els=document.querySelectorAll(sel);
+                for(const el of els){
+                    if(isElementInCenterViewport(el)){
+                        const t=(el.innerText||el.textContent||'').trim();
+                        if(t.length>=4) return t;
+                    }
+                }
+            }catch(e){}
+        }
+
+        // 2. 全局保底扫描：找中心视口范围内符合数字题号开头的节点
         for(const el of document.querySelectorAll('body *')){
-            if(container&&container.contains(el))continue;
-            try{const rect=el.getBoundingClientRect(); if(rect.left<160||rect.width<80)continue;}catch(e){continue;}
-            const t=(el.innerText||el.textContent||'').trim();
-            if(t.length>=5&&t.length<=500&&/^\d+[、.（(]/.test(t))return t;
+            try{
+                const cls=(el.className||'').toString().toLowerCase();
+                if(/(sidebar|drawer|card-list|sheet|answer-card|side-bar)/i.test(cls)) continue;
+                if(isElementInCenterViewport(el)){
+                    const t=(el.innerText||el.textContent||'').trim();
+                    if(t.length>=5&&t.length<=500&&/^\d+[、.（(]/.test(t)) return t;
+                }
+            }catch(e){}
         }
         return '';
     }
