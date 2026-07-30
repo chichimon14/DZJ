@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         网页考试助手 Premium v65 - 彻底解决多选题重复连击取消打钩Bug
+// @name         网页考试助手 Premium v66 - 终极全兼容判断题自动勾选版
 // @namespace    http://tampermonkey.net/
-// @version      65.0.0
-// @description  云端 HTTP 纯GM极速直连 + 彻底解决多选题重复点击取消打钩 Bug + 智能 Vue 事件派发 + 全平台
+// @version      66.0.0
+// @description  云端 HTTP 纯GM极速直连 + 彻底打通 WRONG/CORRECT/对/错 判断题自动勾选 + 全平台
 // @author       Antigravity
 // @match        *://*/*
 // @grant        GM_addStyle
@@ -460,8 +460,11 @@
     function autoCheck(data) {
         if (!data || !data.found) return;
 
-        if (data.q_type === 'judge') {
-            autoCheckJudge(data.answer);
+        const ansStr = (data.answer || '').toString().trim().toUpperCase();
+        const isJudgeType = data.q_type === 'judge' || /^(WRONG|CORRECT|TRUE|FALSE|对|错|√|×)$/i.test(ansStr);
+
+        if (isJudgeType) {
+            autoCheckJudge(ansStr);
             return;
         }
 
@@ -609,27 +612,22 @@
         return '';
     }
 
-    function autoCheckJudge(answer) {
-        const isCorrect = answer === 'correct';
-        const trueKw  = ['正确', '对的', '√', '对', '是', 'true'];
-        const falseKw = ['错误', '错的', '×', '错', '否', 'false'];
+    function autoCheckJudge(answerStr) {
+        const isCorrect = /^(CORRECT|TRUE|对|√|A|1)$/i.test((answerStr || '').toString().trim());
+        const trueKw  = ['正确', '对的', '√', '对', '是', 'true', 'a'];
+        const falseKw = ['错误', '错的', '×', '错', '否', 'false', 'b'];
         const keywords = isCorrect ? trueKw : falseKw;
-        const antiKw   = isCorrect ? falseKw : trueKw;
 
         const elements = findAllOptionElements();
         for (const el of elements) {
-            const text = el.textContent.trim();
-            const textLow = text.toLowerCase();
-            const hasAnti = antiKw.some(k => textLow.includes(k.toLowerCase()));
-            if (!hasAnti && keywords.some(k => textLow === k.toLowerCase() || textLow.includes(k.toLowerCase()))) {
-                const input = el.querySelector('input') || (el.tagName === 'INPUT' ? el : null)
-                    || el.closest('label')?.querySelector('input');
-                triggerFullClick(input || el);
-                setDebug(`✅ 判断题已选: ${isCorrect ? '正确' : '错误'}`);
+            const text = el.textContent.trim().toLowerCase();
+            if (keywords.some(k => text.includes(k))) {
+                smartClickOption(el);
+                setDebug(`✅ 判断题已选: ${isCorrect ? '对 (A)' : '错 (B)'}`);
                 return;
             }
         }
-        setDebug(`⚠️ 判断题未找到选项: ${isCorrect ? '正确' : '错误'}`);
+        setDebug(`⚠️ 判断题未匹配到选项: ${isCorrect ? '对' : '错'}`);
     }
 
     // ===== 3 秒全自动切题与全局守护机制 =====
