@@ -236,20 +236,29 @@
         if (dot) dot.classList.toggle('online', online);
     }
 
-    // ===== 搜题入口 =====
+    // ===== 搜题入口（带 Version & 题干校验，防错位）=====
+    let currentSearchingQuery = '';
+
     function searchQuestion(query) {
         if (!query) return;
-        setDebug('🔍 搜索中: ' + query.slice(0, 30) + '...');
+        // 清洗题干：剥离题号前缀（如 '21、单选题：根据题干信息，在选项中...'）
+        const cleanQuery = query
+            .replace(/^\d+[\s\S]*?(单选题|多选题|判断题|填空题)[：:\s]*/i, '')
+            .replace(/^\d+[.、．\s]+/, '')
+            .trim();
+
+        if (cleanQuery.length < 4) return;
+        currentSearchingQuery = cleanQuery;
+        setDebug('🔍 搜索中: ' + cleanQuery.slice(0, 26) + '...');
 
         if (isConnected && socket && socket.readyState === WebSocket.OPEN) {
-            socket.send(query);
+            socket.send(cleanQuery);
         } else {
-            // HTTP 备用通道
-            const url = `${HTTP_URL}?q=${encodeURIComponent(query)}&token=${encodeURIComponent(USER_TOKEN)}&device_id=${encodeURIComponent(DEVICE_ID)}`;
+            const url = `${HTTP_URL}?q=${encodeURIComponent(cleanQuery)}&token=${encodeURIComponent(USER_TOKEN)}&device_id=${encodeURIComponent(DEVICE_ID)}`;
             GM_xmlhttpRequest({
                 method: 'GET', url,
                 onload: (r) => {
-                    try { handleSearchResult(JSON.parse(r.responseText)); }
+                    try { handleSearchResult(JSON.parse(r.responseText), cleanQuery); }
                     catch (e) { setDebug('❌ HTTP 响应解析失败'); }
                 },
                 onerror: () => setDebug('❌ 网络请求失败，请检查服务器')
@@ -257,14 +266,22 @@
         }
     }
 
-    // ===== 处理搜题结果 =====
-    let lastResult = null;
+    // ===== 处理搜题结果（带防错位丢弃机制）=====
+    function handleSearchResult(data, reqQuery) {
+        // 如果当前页面的题干已经切换，丢弃过期的旧搜题响应
+        const currentTitleEl = findQuestionTitle();
+        if (currentTitleEl) {
+            const curTitle = cleanQuestionTitleText(currentTitleEl.textContent);
+            if (reqQuery && curTitle && !curTitle.includes(reqQuery.slice(0, 10)) && !reqQuery.includes(curTitle.slice(0, 10))) {
+                setDebug('⚠️ 丢弃跨题过期响应');
+                return;
+            }
+        }
 
-    function handleSearchResult(data) {
         lastResult = data;
         renderAnswer(data);
         if (data.found && autoCheckEnabled) {
-            setTimeout(() => autoCheck(data), 200);
+            setTimeout(() => autoCheck(data), 150);
         }
     }
 
@@ -291,48 +308,24 @@
 
         box.innerHTML = `
             <div class="ea-answer-title">🎯 匹配答案（相似度 ${data.score || 0}%，来源: ${data.source === 'private' ? '私有库' : '公共库'}）</div>
-            <div class="ea-answer-text">${answerLetters}</div>
+            <div class="ea-answer-text" style="font-size:16px;color:#10b981">${answerLetters}</div>
             ${optsHtml ? `<div class="ea-options">${optsHtml}</div>` : ''}
         `;
     }
 
-    // ===== 自动勾选（继承 v51 稳定引擎）=====
-    function cleanOptionText(text) {
-        if (!text) return '';
-        return text
-            .replace(/<[^>]+>/g, '')
-            .replace(/^[^A-Za-z（(对错正确√×\d]+/, '')
-            .replace(/^[A-Da-d][.、．\s]+/, '')
-            .trim();
-    }
-
-    function singleClick(el) {
+    // ===== 极速仿真点击与勾选引擎 =====
+    function triggerFullClick(el) {
         if (!el) return false;
-        if (typeof win.jQuery !== 'undefined') {
-            const $el = win.jQuery(el);
-            if ($el.length && typeof $el.trigger === 'function') {
-                $el.trigger('click');
-                return true;
-            }
-        }
-        if (typeof el.click === 'function') { el.click(); return true; }
-        el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-        return true;
-    }
-
-    function getAllOptionElements() {
-        const all = Array.from(document.querySelectorAll('body *'));
-        return all.filter(el => {
-            const tag = el.tagName.toLowerCase();
-            if (!['label', 'li', 'div', 'span', 'td', 'p'].includes(tag)) return false;
-            const children = el.children.length;
-            if (children > 6) return false;
-            const rect = el.getBoundingClientRect();
-            if (rect.left < 160 || rect.width < 40 || rect.width > 900) return false;
-            const text = el.textContent.trim();
-            if (text.length < 1 || text.length > 200) return false;
+        try {
+            ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(evtType => {
+                const evt = new MouseEvent(evtType, { bubbles: true, cancelable: true, view: win });
+                el.dispatchEvent(evt);
+            });
+            if (typeof el.click === 'function') el.click();
             return true;
-        });
+        } catch (e) {
+            return false;
+        }
     }
 
     function autoCheck(data) {
@@ -346,9 +339,10 @@
         const answerLetters = (data.answer || '').toUpperCase().split('').filter(c => /[A-D]/.test(c));
         const opts = data.options || {};
 
-        const elements = getAllOptionElements();
-
+        // 仅抓取屏幕上当前可见的选项节点
+        const elements = getVisibleOptionElements();
         let matchedCount = 0;
+
         answerLetters.forEach(letter => {
             const targetText = opts[letter] ? cleanOptionText(opts[letter]) : '';
 
@@ -361,18 +355,60 @@
 
                 let matched = false;
                 if (elLetter && elLetter === letter) matched = true;
-                if (targetText && cleaned.includes(targetText.slice(0, 8))) matched = true;
+                if (targetText && targetText.length >= 2 && cleaned.includes(targetText.slice(0, 6))) matched = true;
 
                 if (matched) {
                     const input = el.querySelector('input[type=radio], input[type=checkbox]') || el.closest('label')?.querySelector('input');
-                    if (input) { singleClick(input); matchedCount++; break; }
-                    else { singleClick(el); matchedCount++; break; }
+                    const targetEl = input || el;
+                    triggerFullClick(targetEl);
+                    matchedCount++;
+                    break;
                 }
             }
         });
 
         if (matchedCount > 0) setDebug(`✅ 已自动勾选答案: ${data.answer}`);
-        else setDebug(`⚠️ 找到答案但自动勾选失败，请手动操作`);
+        else setDebug(`⚠️ 勾选未命中，答案为: ${data.answer}`);
+    }
+
+    function getVisibleOptionElements() {
+        const all = Array.from(document.querySelectorAll('body *'));
+        return all.filter(el => {
+            if (el.offsetParent === null) return false; // 排除隐藏节点
+            const tag = el.tagName.toLowerCase();
+            if (!['label', 'li', 'div', 'span', 'td', 'p'].includes(tag)) return false;
+            if (el.children.length > 5) return false;
+            const rect = el.getBoundingClientRect();
+            if (rect.width < 30 || rect.height < 15 || rect.top < 0 || rect.top > window.innerHeight) return false;
+            const text = el.textContent.trim();
+            if (text.length < 1 || text.length > 250) return false;
+            return true;
+        });
+    }
+
+    function cleanQuestionTitleText(raw) {
+        return (raw || '')
+            .replace(/^\d+[\s\S]*?(单选题|多选题|判断题|填空题)[：:\s]*/i, '')
+            .replace(/^\d+[.、．\s]+/, '')
+            .trim();
+    }
+
+    function findQuestionTitle() {
+        const selectors = [
+            '.question-title', '.q-title', '.stem', '.exam-title',
+            '[class*="questionStem"]', '[class*="question_title"]',
+            '[class*="ques-title"]', '[class*="title"][class*="ques"]',
+            '.exam-question-title'
+        ];
+        for (const sel of selectors) {
+            const els = document.querySelectorAll(sel);
+            for (const el of els) {
+                if (el.offsetParent !== null && el.textContent.trim().length > 6) {
+                    return el;
+                }
+            }
+        }
+        return null;
     }
 
     function autoCheckJudge(answer) {
