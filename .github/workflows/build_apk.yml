@@ -9,6 +9,9 @@ on:
       - 'v*'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -22,31 +25,25 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-          cache: 'gradle'
-
-      - name: Grant execute permission for gradlew
-        run: |
-          cd android
-          if [ ! -f gradlew ]; then
-            gradle wrapper
-          fi
-          chmod +x gradlew || true
 
       - name: Build Debug APK
         run: |
           cd android
+          chmod +x gradlew
           ./gradlew assembleDebug --stacktrace
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ExamAssistant-v95-Debug-APK
+          name: ExamAssistant-v99-Debug-APK
           path: android/app/build/outputs/apk/debug/app-debug.apk
 
-      - name: Create Release and Upload APK
+      - name: Release APK to GitHub Releases
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v1
         with:
           files: android/app/build/outputs/apk/debug/app-debug.apk
+          name: "网页考试助手 Android 原生 App v99.0"
+          body: "网页考试助手 Android 原生 App v99.0 Release，内置 CameraX 二维码极速识别、微信 UA 伪装及 v99 屏幕中心 Y 轴几何锁定自动化搜题打钩引擎。"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
