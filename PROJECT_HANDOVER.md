@@ -115,14 +115,23 @@ graph TD
 2. **原生 App 考试**：
    - 使用 **Auto.js / AutoX.js** 基于 Android 无障碍服务 (`AccessibilityService`) 读取界面节点树，结合手机端搜题 API 实现自动点击。
 
-### v89.0 (最新稳定版 - 已推送到 GitHub `premium-version` 分支)
-1. **彻底解决 47 题与多选题勾选失灵**：单次派发 (`singleClick`) 结合已勾选识别，完美防 Toggle 连击取消。
-2. **kyexam 专属 `z-checked` 深层识别**：递归扫描选项节点及其所有子节点的 `z-checked` / `z-sel` / `is-checked` / `selected` 类名，实现已做题目的正确答案**绝对锁死保护**（绝不二次点击取消）。
-3. **判断题 `correct` / `wrong` 自动映射**：自动解包云端返回的 `correct` 锁定 A (对)，`wrong` 锁定 B (错)。
-4. **云端在线 175.178.78.88 直连 + 详细选项内容展开**：直连公网在线服务器，渲染展示每一项选项的完整文字内容。
+### v95.0 (最新稳定版 - 已创建 Android 移动端工程)
+1. **彻底解决选项不一致问题**：选项内容双向校验与重映射，防止同题干不同选项导致的错选。
+2. **Android 原生移动端 App 工程落地**：在 `dzz/android/` 目录下完成 CameraX 扫码登录、微信 User-Agent 伪装 WebView、内置 v95 Userscript 引擎自动化注入的全套代码构建。
+
+---
+
+## 8. Android 移动端代码清单 (`android/`)
+
+| 文件路径 | 说明 | 核心功能 |
+| :--- | :--- | :--- |
+| [android/app/src/main/assets/exam_assistant.user.js](file:///Users/julian/antigravity/DZZ/android/app/src/main/assets/exam_assistant.user.js) | 内置 Userscript | 打包内置的 v95 自动化搜题与打钩引擎 |
+| [android/app/src/main/java/com/exam/assistant/ScanActivity.kt](file:///Users/julian/antigravity/DZZ/android/app/src/main/java/com/exam/assistant/ScanActivity.kt) | 扫码入口 Activity | 基于 CameraX + ZXing 扫描微信/考试二维码解析 URL |
+| [android/app/src/main/java/com/exam/assistant/MainActivity.kt](file:///Users/julian/antigravity/DZZ/android/app/src/main/java/com/exam/assistant/MainActivity.kt) | 答题容器 Activity | WebView 微信 UA 伪装、Cookie 保持、脚本自动注入 |
+| [android/README.md](file:///Users/julian/antigravity/DZZ/android/README.md) | 说明文档 | Android Studio 编译打包 APK 与使用说明 |
 
 ---
 
 *文档更新时间：2026-07-30*
-*Git 最新 Commit: 74c6515 (Branch: premium-version)*
+
 
