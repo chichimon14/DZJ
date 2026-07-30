@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         网页考试助手 Premium v58 - 精准题干提纯与强效勾选重构版
+// @name         网页考试助手 Premium v59 - 中央答题区精准定位与点击秒搜重构版
 // @namespace    http://tampermonkey.net/
-// @version      58.0.0
-// @description  云端 WSS/HTTP 极速搜题 + Token 一键激活 + 智能剔除引导说明 + 强效选项勾选 + 全平台
+// @version      59.0.0
+// @description  云端 WSS/HTTP 极速搜题 + Token 一键激活 + 锁定中央答题区 + 切换点击即搜 + 全平台
 // @author       Antigravity
 // @match        *://*/*
 // @grant        GM_addStyle
@@ -503,29 +503,68 @@
             .trim();
     }
 
-    function findQuestionTitleText() {
-        const allNodes = Array.from(document.querySelectorAll('body div, body p, body span, body td, body section, body h1, body h2, body h3, body h4'));
+    function getExactStemText() {
+        // 1. 先定位【上一题】或【下一题】按钮
+        let anchorBtn = null;
+        const allBtns = Array.from(document.querySelectorAll('button, div, a, span'));
+        for (const b of allBtns) {
+            if (b.closest('#exam-assistant-container')) continue;
+            const txt = b.textContent.trim();
+            if (/^下一题$|^上一题$/.test(txt) && b.offsetParent !== null) {
+                anchorBtn = b;
+                break;
+            }
+        }
 
-        for (const el of allNodes) {
-            if (el.closest('#exam-assistant-container')) continue;
-            if (el.offsetParent === null) continue;
-            if (el.children.length > 3) continue;
+        // 2. 向上寻找包含该按钮的【中央主答题大卡片】容器
+        let mainExamCard = null;
+        if (anchorBtn) {
+            let p = anchorBtn.parentElement;
+            while (p && p !== document.body) {
+                if (p.offsetWidth > 280 && p.offsetHeight > 180 && !p.closest('#exam-assistant-container')) {
+                    mainExamCard = p;
+                    break;
+                }
+                p = p.parentElement;
+            }
+        }
 
-            let text = el.textContent.trim();
+        // 兜底方案：若找不到按钮，通过选项容器 A. / B. 向外溯源找到主答题卡片
+        if (!mainExamCard) {
+            const options = findAllOptionElements();
+            if (options.length > 0) {
+                const firstOpt = options[0];
+                mainExamCard = firstOpt.closest('form, section, div[class*="question"], div[class*="paper"]') 
+                    || firstOpt.parentElement?.parentElement?.parentElement 
+                    || document.body;
+            }
+        }
+
+        if (!mainExamCard) mainExamCard = document.body;
+
+        // 3. 在 mainExamCard 范围内提取真正的题干文本
+        const nodes = Array.from(mainExamCard.querySelectorAll('div, p, span, h3, h4, h5, section'));
+        for (const node of nodes) {
+            if (node.closest('#exam-assistant-container')) continue;
+            if (node.offsetParent === null) continue;
+            if (node.children.length > 3) continue;
+
+            let text = node.textContent.trim();
             if (text.length < 4 || text.length > 800) continue;
 
-            // 剔除说明性节点 (如 "28、单选题：根据题干信息，在选项中，选择合适的答案。(1分)")
-            if (/^\d*[\s、.]*(单选题|多选题|判断题)[：:\s]*根据题干/i.test(text) && text.length < 45) {
-                continue;
-            }
+            // 绝杀排除：考生姓名、关号、准考证、答题卡、已做未做等头部干扰文本
+            if (/姓\s*名|关\s*号|准考证|考生|题卡|已做|未做|完成题数/i.test(text)) continue;
 
-            // 剔除选项节点
+            // 排除单纯的规则引导栏 ("29、 单选题：根据题干信息，在选项中，选择合适的答案。(1分)")
+            if (/^\d*[\s、.]*(单选题|多选题|判断题)[：:\s]*根据题干/i.test(text) && text.length < 45) continue;
+
+            // 排除选项节点 (如 "A. 签发植物检疫证书")
             if (/^\s*[（(]?[A-Da-d][)）.、：:\s]/.test(text)) continue;
 
-            // 剔除按钮与提示
-            if (/^(上一题|下一题|提交|答题卡|交卷|搜索|搜题|单选题|多选题|判断题)$/.test(text)) continue;
+            // 排除按钮
+            if (/^(上一题|下一题|提交|答题卡|交卷|搜索|搜题)$/.test(text)) continue;
 
-            // 净化过滤掉顶部的引导性字词
+            // 提纯净化：剥离段落开头的无用引导说明
             text = text
                 .replace(/^\d*[\s、.]*(单选题|多选题|判断题)[：:\s]*/gi, '')
                 .replace(/根据题干信息.*?选择.*?答案[。！!\s]*/gi, '')
@@ -602,7 +641,7 @@
     }
 
     function autoProcessCurrentQuestion() {
-        const titleText = findQuestionTitleText();
+        const titleText = getExactStemText();
         if (!titleText || titleText.length < 4) return;
 
         const hash = titleHash(titleText);
@@ -612,10 +651,20 @@
         searchQuestion(titleText);
     }
 
-    // 400ms 全局轮询搜题守护：持续监控 DOM 自动识别新题干并极速搜题
+    // 绑定全网事件监听：在用户点击网页【上一题】/【下一题】/【答题卡】时，立即重置并极速搜题
+    document.addEventListener('click', (e) => {
+        const target = e.target;
+        if (target && !target.closest('#exam-assistant-container')) {
+            setTimeout(() => {
+                autoProcessCurrentQuestion();
+            }, 180);
+        }
+    }, true);
+
+    // 350ms 全局守护心跳
     setInterval(() => {
         autoProcessCurrentQuestion();
-    }, 400);
+    }, 350);
 
     // ===== 题库上传功能 =====
     function uploadBankFile(file) {
