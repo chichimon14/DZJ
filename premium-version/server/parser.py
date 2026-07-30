@@ -96,16 +96,18 @@ def parse_excel(file_path: str, token: str = None) -> List[Dict[str, Any]]:
     columns = [str(c).strip() for c in df.columns]
 
     # ── 列名自动映射 ─────────────────────────────────────────────────────────
-    def find_col(keywords: List[str]) -> str | None:
-        for kw in keywords:
-            for col in columns:
+    def find_col(keywords: List[str], exclude: List[str] = None) -> Optional[str]:
+        for col in columns:
+            if exclude and any(ex in col for ex in exclude):
+                continue
+            for kw in keywords:
                 if kw in col:
                     return col
         return None
 
     col_id     = find_col(['序号', '编号', 'id', 'ID'])
     col_title  = find_col(['题干', '试题内容', '题目', '问题'])
-    col_answer = find_col(['答案'])
+    col_answer = find_col(['答案'], exclude=['详细', '解析', '选项'])
     col_detail = find_col(['详细答案', '选项', '解析'])
 
     if not col_title:

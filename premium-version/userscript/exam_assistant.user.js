@@ -584,8 +584,8 @@
         </div>
 
         <div class="ea-tabs" id="ea-tabs">
-            <button class="ea-tab active" onclick="eaShowTab('search',this)">🔍 搜题</button>
-            <button class="ea-tab" onclick="eaShowTab('settings',this)">⚙️ 设置</button>
+            <button class="ea-tab active" id="ea-tab-btn-search">🔍 搜题</button>
+            <button class="ea-tab" id="ea-tab-btn-settings">⚙️ 设置</button>
         </div>
 
         <div id="exam-assistant-body">
@@ -622,7 +622,7 @@
                 <h4>🔑 激活码设置</h4>
                 <div class="ea-setting-row">
                     <input class="ea-setting-input" id="ea-token-input" placeholder="输入激活码 XXXX-XXXX-XXXX-XXXX-XXXX" value="${USER_TOKEN}"/>
-                    <button class="ea-btn ea-btn-blue" style="font-size:11px;padding:8px 10px" onclick="eaActivate()">激活</button>
+                    <button class="ea-btn ea-btn-blue" id="ea-activate-btn" style="font-size:11px;padding:8px 10px">激活</button>
                 </div>
                 <div style="margin-top:8px" id="ea-token-status">
                     ${USER_TOKEN ? '<span style="color:#64748b;font-size:11px">请点击激活验证状态</span>' : '<span style="color:#64748b;font-size:11px">尚未填写激活码</span>'}
@@ -637,19 +637,19 @@
                     <p>点击或拖拽 Excel/CSV 到此处</p>
                     <p>列名: 序号 | 题干 | 答案 | 详细答案</p>
                 </div>
-                <input type="file" id="ea-bank-file" accept=".xlsx,.xls,.csv" style="display:none" onchange="eaUploadFile(this)"/>
+                <input type="file" id="ea-bank-file" accept=".xlsx,.xls,.csv" style="display:none" />
                 <div class="ea-progress" id="ea-upload-progress">
                     <div class="ea-progress-bar" id="ea-upload-bar"></div>
                 </div>
                 <div id="ea-upload-status" style="font-size:11px;color:#64748b;margin-top:6px"></div>
-                <button class="ea-btn ea-btn-red" style="margin-top:10px;width:100%;font-size:11px" onclick="eaClearBank()">🗑️ 清空私有题库</button>
+                <button class="ea-btn ea-btn-red" id="ea-clear-bank-btn" style="margin-top:10px;width:100%;font-size:11px">🗑️ 清空私有题库</button>
               </div>
 
               <div class="ea-setting-group">
                 <h4>🌐 服务器地址</h4>
                 <div class="ea-setting-row">
                     <input class="ea-setting-input" id="ea-domain-input" placeholder="your-domain.com" value="${CLOUD_DOMAIN}"/>
-                    <button class="ea-btn ea-btn-blue" style="font-size:11px;padding:8px 10px" onclick="eaSaveDomain()">保存</button>
+                    <button class="ea-btn ea-btn-blue" id="ea-save-domain-btn" style="font-size:11px;padding:8px 10px">保存</button>
                 </div>
               </div>
 
@@ -660,32 +660,66 @@
 
         document.body.appendChild(container);
 
-        // 全局函数挂载（油猴沙箱安全访问）
-        win.eaShowTab = function(tab, btn) {
-            document.getElementById('ea-tab-search').style.display = tab === 'search' ? '' : 'none';
-            document.getElementById('ea-tab-settings').style.display = tab === 'settings' ? '' : 'none';
-            document.querySelectorAll('.ea-tab').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            if (tab === 'settings' && USER_TOKEN) loadBankInfo();
-        };
+        // 标签切换
+        const tabSearchBtn = document.getElementById('ea-tab-btn-search');
+        const tabSettingsBtn = document.getElementById('ea-tab-btn-settings');
+        const tabSearchContent = document.getElementById('ea-tab-search');
+        const tabSettingsContent = document.getElementById('ea-tab-settings');
 
-        win.eaActivate = function() {
-            const token = document.getElementById('ea-token-input').value.trim();
-            if (!token) { alert('请填写激活码'); return; }
-            verifyToken(token);
-        };
+        function switchTab(target) {
+            if (target === 'search') {
+                tabSearchContent.style.display = '';
+                tabSettingsContent.style.display = 'none';
+                tabSearchBtn.classList.add('active');
+                tabSettingsBtn.classList.remove('active');
+            } else {
+                tabSearchContent.style.display = 'none';
+                tabSettingsContent.style.display = '';
+                tabSettingsBtn.classList.add('active');
+                tabSearchBtn.classList.remove('active');
+                if (USER_TOKEN) loadBankInfo();
+            }
+        }
 
-        win.eaUploadFile = function(input) {
-            if (input.files[0]) uploadBankFile(input.files[0]);
-        };
+        if (tabSearchBtn) tabSearchBtn.addEventListener('click', () => switchTab('search'));
+        if (tabSettingsBtn) tabSettingsBtn.addEventListener('click', () => switchTab('settings'));
 
-        win.eaClearBank = function() { clearPrivateBank(); };
+        // 激活卡密
+        const activateBtn = document.getElementById('ea-activate-btn');
+        if (activateBtn) {
+            activateBtn.addEventListener('click', () => {
+                const token = document.getElementById('ea-token-input').value.trim();
+                if (!token) { alert('请填写激活码'); return; }
+                verifyToken(token);
+            });
+        }
 
-        win.eaSaveDomain = function() {
-            const domain = document.getElementById('ea-domain-input').value.trim();
-            GM_setValue('cloud_domain', domain);
-            setDebug('✅ 服务器域名已保存，请刷新页面重连');
-        };
+        // 清空私有题库
+        const clearBankBtn = document.getElementById('ea-clear-bank-btn');
+        if (clearBankBtn) {
+            clearBankBtn.addEventListener('click', () => clearPrivateBank());
+        }
+
+        // 保存域名并重新连接
+        const saveDomainBtn = document.getElementById('ea-save-domain-btn');
+        if (saveDomainBtn) {
+            saveDomainBtn.addEventListener('click', () => {
+                const domain = document.getElementById('ea-domain-input').value.trim();
+                if (!domain) return;
+                GM_setValue('cloud_domain', domain);
+                setDebug('✅ 服务器域名已更新，正在重连...');
+                if (socket) { try { socket.close(); } catch(e){} }
+                setTimeout(() => connectWS(), 500);
+            });
+        }
+
+        // 文件上传控件绑定
+        const bankFileInput = document.getElementById('ea-bank-file');
+        if (bankFileInput) {
+            bankFileInput.addEventListener('change', function() {
+                if (this.files && this.files[0]) uploadBankFile(this.files[0]);
+            });
+        }
 
         // 拖拽上传
         const dropZone = document.getElementById('ea-drop-zone');
