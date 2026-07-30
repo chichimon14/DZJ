@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         网页考试助手 Premium v56 - 智能切题流水线与无缝云端版
+// @name         网页考试助手 Premium v57 - GM与Native双保险直连搜题版
 // @namespace    http://tampermonkey.net/
-// @version      56.0.0
-// @description  云端 WSS/HTTP 极速搜题 + Token 一键激活 + 私有题库拖拽上传 + 全自动智能切题 + 全平台
+// @version      57.0.0
+// @description  云端 WSS/HTTP 极速搜题 + Token 一键激活 + 私有题库拖拽上传 + 双保险无缝连接 + 全平台
 // @author       Antigravity
 // @match        *://*/*
 // @grant        GM_addStyle
@@ -34,7 +34,7 @@
     const TOKEN_INFO_URL  = `${HTTP_SCHEME}${CLOUD_DOMAIN}/api/token/info`;
 
     // ===== 持久化存储的配置项 =====
-    let USER_TOKEN   = GM_getValue('user_token', '');
+    let USER_TOKEN   = GM_getValue('user_token', 'TEST-VIP-2026-8888');
     let DEVICE_ID    = GM_getValue('device_id', '');
 
     // 若无 device_id，生成并持久化（浏览器指纹混合随机）
@@ -249,42 +249,59 @@
 
         if (cleanQuery.length < 3) return;
         currentSearchingQuery = cleanQuery;
-        setDebug('🔍 云端搜题中: ' + cleanQuery.slice(0, 22) + '...');
+        setDebug('🔍 云端搜题中: ' + cleanQuery.slice(0, 20) + '...');
 
         const token = USER_TOKEN || 'TEST-VIP-2026-8888';
+        const searchUrl = `${HTTP_URL}?q=${encodeURIComponent(cleanQuery)}&token=${encodeURIComponent(token)}&device_id=${encodeURIComponent(DEVICE_ID)}`;
 
+        let responded = false;
+        const onDataReceive = (data) => {
+            if (responded) return;
+            responded = true;
+            if (data) {
+                try {
+                    handleSearchResult(data, cleanQuery);
+                } catch (e) {
+                    console.error('[ExamAssistant] handleSearchResult Error:', e);
+                }
+            }
+        };
+
+        // 1. 若 WebSocket 已处于 OPEN 状态，发送搜索
         if (isConnected && socket && socket.readyState === WebSocket.OPEN) {
             socket.send(cleanQuery);
-        } else {
-            const url = `${HTTP_URL}?q=${encodeURIComponent(cleanQuery)}&token=${encodeURIComponent(token)}&device_id=${encodeURIComponent(DEVICE_ID)}`;
+            return;
+        }
+
+        // 2. 通道一：GM_xmlhttpRequest 发送
+        try {
             GM_xmlhttpRequest({
                 method: 'GET',
-                url: url,
-                timeout: 10000,
+                url: searchUrl,
+                timeout: 8000,
                 onload: (r) => {
-                    let data = null;
-                    try {
-                        data = typeof r.responseText === 'string' ? JSON.parse(r.responseText) : r.responseText;
-                    } catch (e) {
-                        setDebug('⚠️ 响应解析异常: ' + (r.responseText || '').slice(0, 30));
-                        return;
-                    }
-                    if (data) {
-                        try {
-                            handleSearchResult(data, cleanQuery);
-                        } catch (err) {
-                            console.error('[ExamAssistant] handleSearchResult 运行异常:', err);
-                        }
+                    if (r.status === 200 && r.responseText) {
+                        try { onDataReceive(JSON.parse(r.responseText)); } catch (e) {}
                     }
                 },
-                onerror: (err) => {
-                    setDebug('❌ 网络连接失败，请检查服务器网络');
-                },
-                ontimeout: () => {
-                    setDebug('⏰ 云端搜题超时，正在自动重试...');
-                }
+                onerror: () => {},
+                ontimeout: () => {}
             });
-        }
+        } catch (e) {}
+
+        // 3. 通道二（双保险）：原生 fetch 兜底（1 秒内若 GM 未响应，fetch 强制补救）
+        setTimeout(() => {
+            if (!responded) {
+                fetch(searchUrl)
+                    .then(res => res.json())
+                    .then(data => onDataReceive(data))
+                    .catch(err => {
+                        if (!responded) {
+                            setDebug('❌ 云端连接异常，请检查服务器状态');
+                        }
+                    });
+            }
+        }, 1000);
     }
 
     let isSearchingQuestion = false;
