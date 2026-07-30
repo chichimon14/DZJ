@@ -8,183 +8,186 @@
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#0a0e1a;--bg2:#111827;--bg3:#1f2937;--bg4:#374151;
-  --green:#10b981;--green2:rgba(16,185,129,.15);
-  --blue:#3b82f6;--blue2:rgba(59,130,246,.15);
-  --purple:#8b5cf6;--purple2:rgba(139,92,246,.15);
-  --red:#ef4444;--red2:rgba(239,68,68,.15);
-  --gold:#f59e0b;--gold2:rgba(245,158,11,.15);
-  --text:#f1f5f9;--text2:#94a3b8;--text3:#64748b;
-  --radius:12px;--radius-sm:8px;
-  --border:rgba(255,255,255,.08);
+  --bg:#f8fafc;--card:#ffffff;--card-hover:#f1f5f9;
+  --sidebar:#ffffff;--border:#e2e8f0;--border-hover:#cbd5e1;
+  --primary:#4f46e5;--primary-light:rgba(79,70,229,.08);--primary-hover:#4338ca;
+  --green:#10b981;--green-bg:#ecfdf5;--green-border:#a7f3d0;
+  --red:#ef4444;--red-bg:#fef2f2;--red-border:#fecaca;
+  --amber:#f59e0b;--amber-bg:#fffbebf;--amber-border:#fde68a;
+  --text-main:#0f172a;--text-sub:#64748b;--text-muted:#94a3b8;
+  --radius:16px;--radius-sm:10px;
+  --shadow:0 4px 20px -2px rgba(0,0,0,.05), 0 2px 6px -1px rgba(0,0,0,.02);
+  --shadow-lg:0 20px 30px -10px rgba(0,0,0,.08);
 }
-body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var(--text-main);min-height:100vh}
 
 /* ── 登录遮罩 ── */
 #login-overlay{
-  position:fixed;inset:0;background:rgba(0,0,0,.85);backdrop-filter:blur(12px);
+  position:fixed;inset:0;background:rgba(15,23,42,.4);backdrop-filter:blur(16px);
   display:flex;align-items:center;justify-content:center;z-index:9999;
 }
 .login-card{
-  background:var(--bg2);border:1px solid var(--border);border-radius:20px;
-  padding:40px;width:400px;text-align:center;
+  background:var(--card);border:1px solid var(--border);border-radius:24px;
+  padding:44px 40px;width:420px;text-align:center;box-shadow:var(--shadow-lg);
+  animation:popIn .3s cubic-bezier(.34,1.56,.64,1);
 }
-.login-card h1{font-size:24px;font-weight:700;margin-bottom:8px}
-.login-card p{color:var(--text2);font-size:14px;margin-bottom:28px}
+@keyframes popIn{from{transform:scale(.9);opacity:0}to{transform:scale(1);opacity:1}}
+.login-card h1{font-size:24px;font-weight:700;margin-bottom:8px;color:var(--text-main)}
+.login-card p{color:var(--text-sub);font-size:14px;margin-bottom:32px}
 .login-card input{
-  width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);
-  padding:14px 16px;color:var(--text);font-size:14px;outline:none;margin-bottom:16px;
-  transition:border-color .2s;
+  width:100%;background:var(--bg);border:1.5px solid var(--border);border-radius:var(--radius-sm);
+  padding:14px 16px;color:var(--text-main);font-size:14px;outline:none;margin-bottom:20px;
+  transition:all .2s;
 }
-.login-card input:focus{border-color:var(--blue)}
+.login-card input:focus{border-color:var(--primary);box-shadow:0 0 0 4px var(--primary-light)}
+
 .btn{
   display:inline-flex;align-items:center;gap:8px;padding:12px 24px;
   border-radius:var(--radius-sm);border:none;font-size:14px;font-weight:600;
-  cursor:pointer;transition:all .2s;width:100%;justify-content:center;
+  cursor:pointer;transition:all .2s;justify-content:center;
 }
-.btn-primary{background:linear-gradient(135deg,var(--blue),var(--purple));color:#fff}
-.btn-primary:hover{opacity:.85;transform:translateY(-1px)}
-.btn-danger{background:var(--red2);border:1px solid var(--red);color:var(--red)}
-.btn-danger:hover{background:rgba(239,68,68,.3)}
-.btn-success{background:var(--green2);border:1px solid var(--green);color:var(--green)}
-.btn-success:hover{background:rgba(16,185,129,.3)}
-.btn-sm{padding:7px 14px;font-size:12px;width:auto}
+.btn-primary{background:linear-gradient(135deg,var(--primary),#7c3aed);color:#fff;box-shadow:0 4px 12px rgba(79,70,229,.25)}
+.btn-primary:hover{opacity:.92;transform:translateY(-1px);box-shadow:0 6px 16px rgba(79,70,229,.35)}
+.btn-danger{background:var(--red-bg);border:1px solid var(--red-border);color:var(--red)}
+.btn-danger:hover{background:#fee2e2;transform:translateY(-1px)}
+.btn-secondary{background:var(--bg);border:1px solid var(--border);color:var(--text-sub)}
+.btn-secondary:hover{background:#e2e8f0;color:var(--text-main)}
+.btn-sm{padding:7px 14px;font-size:12px}
 
-/* ── 主布局 ── */
+/* ── 页面主布局 ── */
 .layout{display:flex;height:100vh;overflow:hidden}
 .sidebar{
-  width:240px;background:var(--bg2);border-right:1px solid var(--border);
-  display:flex;flex-direction:column;flex-shrink:0;
+  width:250px;background:var(--sidebar);border-right:1px solid var(--border);
+  display:flex;flex-direction:column;flex-shrink:0;box-shadow:2px 0 12px rgba(0,0,0,.02);
 }
 .sidebar-brand{
-  padding:24px 20px;border-bottom:1px solid var(--border);
-  font-size:16px;font-weight:700;
+  padding:28px 24px;border-bottom:1px solid var(--border);
+  font-size:18px;font-weight:800;letter-spacing:-.02em;
 }
 .sidebar-brand span{
-  display:inline-block;background:linear-gradient(135deg,var(--green),var(--blue));
+  background:linear-gradient(135deg,var(--primary),#9333ea);
   -webkit-background-clip:text;-webkit-text-fill-color:transparent;
 }
-.nav{flex:1;padding:16px 12px;display:flex;flex-direction:column;gap:4px}
+.nav{flex:1;padding:20px 14px;display:flex;flex-direction:column;gap:6px}
 .nav-item{
-  display:flex;align-items:center;gap:12px;padding:10px 12px;
-  border-radius:var(--radius-sm);color:var(--text2);font-size:14px;
+  display:flex;align-items:center;gap:12px;padding:12px 16px;
+  border-radius:var(--radius-sm);color:var(--text-sub);font-size:14px;font-weight:500;
   cursor:pointer;transition:all .2s;border:none;background:none;width:100%;text-align:left;
 }
-.nav-item:hover,.nav-item.active{background:var(--blue2);color:var(--blue)}
-.nav-item.active{font-weight:600}
-.sidebar-bottom{padding:16px;border-top:1px solid var(--border)}
+.nav-item:hover{background:var(--bg);color:var(--text-main)}
+.nav-item.active{background:var(--primary-light);color:var(--primary);font-weight:700}
+
+.sidebar-bottom{padding:20px;border-top:1px solid var(--border)}
 .admin-badge{
   display:flex;align-items:center;gap:10px;
-  background:var(--green2);border:1px solid var(--green);
-  border-radius:var(--radius-sm);padding:10px 12px;font-size:13px;
+  background:var(--green-bg);border:1px solid var(--green-border);
+  border-radius:var(--radius-sm);padding:10px 14px;font-size:13px;color:var(--green);font-weight:600;
 }
-.dot{width:8px;height:8px;border-radius:50%;background:var(--green);
-  box-shadow:0 0 8px var(--green);animation:pulse 2s infinite}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
 
 /* ── 内容区 ── */
-.content{flex:1;overflow-y:auto;padding:28px}
-.page{display:none}
+.content{flex:1;overflow-y:auto;padding:36px;background:var(--bg)}
+.page{display:none;animation:fadeIn .2s ease}
 .page.active{display:block}
-.page-title{font-size:22px;font-weight:700;margin-bottom:8px}
-.page-sub{color:var(--text2);font-size:14px;margin-bottom:24px}
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.page-title{font-size:24px;font-weight:800;color:var(--text-main);margin-bottom:6px;letter-spacing:-.02em}
+.page-sub{color:var(--text-sub);font-size:14px;margin-bottom:28px}
 
 /* ── 统计卡片 ── */
-.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:28px}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:20px;margin-bottom:32px}
 .stat-card{
-  background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);
-  padding:20px;display:flex;align-items:flex-start;justify-content:space-between;
+  background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
+  padding:24px;display:flex;align-items:center;justify-content:space-between;
+  box-shadow:var(--shadow);transition:all .2s;
 }
-.stat-label{color:var(--text2);font-size:13px;margin-bottom:8px}
-.stat-value{font-size:28px;font-weight:700}
-.stat-icon{font-size:28px}
+.stat-card:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,0,0,.06);border-color:var(--border-hover)}
+.stat-label{color:var(--text-sub);font-size:13px;font-weight:500;margin-bottom:8px}
+.stat-value{font-size:30px;font-weight:800;color:var(--text-main);line-height:1}
+.stat-icon{font-size:32px;background:var(--bg);padding:12px;border-radius:14px}
 
-/* ── 表格 ── */
-.table-wrap{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
-.table-header{
-  display:flex;align-items:center;justify-content:space-between;
-  padding:16px 20px;border-bottom:1px solid var(--border);
-}
-.table-header h3{font-size:15px;font-weight:600}
+/* ── 卡片与表格 ── */
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:28px;margin-bottom:24px;box-shadow:var(--shadow)}
+.card h3{font-size:16px;font-weight:700;margin-bottom:20px;padding-bottom:14px;border-bottom:1px solid var(--border);color:var(--text-main);display:flex;align-items:center;justify-content:space-between}
+
+.table-wrap{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow);margin-bottom:24px}
+.table-header{display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid var(--border)}
+.table-header h3{font-size:16px;font-weight:700}
 table{width:100%;border-collapse:collapse}
 th{
-  background:var(--bg3);padding:12px 16px;text-align:left;
-  font-size:12px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;
+  background:#f1f5f9;padding:14px 20px;text-align:left;
+  font-size:12px;font-weight:700;color:var(--text-sub);text-transform:uppercase;letter-spacing:.05em;
 }
-td{padding:12px 16px;font-size:13px;border-top:1px solid var(--border);vertical-align:middle}
-tr:hover td{background:rgba(255,255,255,.02)}
+td{padding:16px 20px;font-size:14px;border-top:1px solid var(--border);vertical-align:middle;color:var(--text-main)}
+tr:hover td{background:#f8fafc}
 .badge{
-  display:inline-flex;align-items:center;padding:3px 10px;border-radius:99px;
-  font-size:11px;font-weight:600;
+  display:inline-flex;align-items:center;padding:4px 12px;border-radius:99px;
+  font-size:12px;font-weight:600;
 }
-.badge-green{background:var(--green2);color:var(--green);border:1px solid rgba(16,185,129,.3)}
-.badge-red{background:var(--red2);color:var(--red);border:1px solid rgba(239,68,68,.3)}
-.badge-blue{background:var(--blue2);color:var(--blue);border:1px solid rgba(59,130,246,.3)}
-.badge-gold{background:var(--gold2);color:var(--gold);border:1px solid rgba(245,158,11,.3)}
-code{
-  background:var(--bg3);padding:3px 8px;border-radius:4px;
-  font-size:12px;font-family:monospace;letter-spacing:.05em;color:var(--green);
-}
+.badge-green{background:var(--green-bg);color:var(--green);border:1px solid var(--green-border)}
+.badge-red{background:var(--red-bg);color:var(--red);border:1px solid var(--red-border)}
+.badge-blue{background:var(--primary-light);color:var(--primary);border:1px solid rgba(79,70,229,.2)}
+.badge-gold{background:#fffbeb;color:#d97706;border:1px solid #fde68a}
+code{background:#f1f5f9;padding:4px 8px;border-radius:6px;font-size:12px;font-family:monospace;color:var(--primary);font-weight:600}
 
-/* ── 表单 ── */
-.card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:24px;margin-bottom:20px}
-.card h3{font-size:15px;font-weight:600;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border)}
-.form-row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px}
+/* ── 表单控制 ── */
+.form-row{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px}
 .form-group{display:flex;flex-direction:column;gap:6px}
-.form-group label{font-size:12px;color:var(--text2);font-weight:500}
+.form-group label{font-size:13px;color:var(--text-sub);font-weight:600}
 .form-control{
-  background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);
-  padding:10px 14px;color:var(--text);font-size:13px;outline:none;min-width:120px;
+  background:var(--bg);border:1.5px solid var(--border);border-radius:var(--radius-sm);
+  padding:11px 16px;color:var(--text-main);font-size:14px;outline:none;min-width:140px;
+  transition:all .2s;
 }
-.form-control:focus{border-color:var(--blue)}
-select.form-control option{background:var(--bg3)}
+.form-control:focus{border-color:var(--primary);background:#fff;box-shadow:0 0 0 4px var(--primary-light)}
 
-/* ── 生成结果 ── */
-.token-list{
-  background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);
-  padding:16px;max-height:200px;overflow-y:auto;margin-top:16px;
-}
-.token-item{
-  font-family:monospace;font-size:13px;color:var(--green);padding:4px 0;
-  border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;
-}
-.token-item:last-child{border-bottom:none}
-
-/* ── 文件上传区 ── */
+/* 拖拽上传 */
 .drop-zone{
-  border:2px dashed var(--border);border-radius:var(--radius);padding:40px;
-  text-align:center;cursor:pointer;transition:all .3s;
+  border:2px dashed var(--border);border-radius:var(--radius);padding:48px 24px;
+  text-align:center;cursor:pointer;transition:all .3s;background:var(--bg);
 }
-.drop-zone:hover,.drop-zone.drag{border-color:var(--blue);background:var(--blue2)}
-.drop-zone .dz-icon{font-size:40px;margin-bottom:12px}
-.drop-zone p{color:var(--text2);font-size:14px}
-.drop-zone strong{color:var(--blue)}
+.drop-zone:hover,.drop-zone.drag{border-color:var(--primary);background:var(--primary-light)}
+.drop-zone .dz-icon{font-size:44px;margin-bottom:12px}
+.drop-zone p{color:var(--text-sub);font-size:14px}
+.drop-zone strong{color:var(--primary)}
 
-/* ── toast ── */
-.toast{
-  position:fixed;bottom:24px;right:24px;padding:14px 20px;border-radius:var(--radius-sm);
-  font-size:14px;font-weight:500;z-index:99999;
-  animation:slideIn .3s ease;
+/* ── 模态确认弹窗 ── */
+.modal-overlay{
+  position:fixed;inset:0;background:rgba(15,23,42,.4);backdrop-filter:blur(8px);
+  display:none;align-items:center;justify-content:center;z-index:99999;padding:20px;
 }
-.toast.success{background:var(--green2);border:1px solid var(--green);color:var(--green)}
-.toast.error{background:var(--red2);border:1px solid var(--red);color:var(--red)}
+.modal-overlay.show{display:flex}
+.modal-card{
+  background:var(--card);border:1px solid var(--border);border-radius:24px;
+  padding:36px;max-width:460px;width:100%;text-align:center;box-shadow:var(--shadow-lg);
+  animation:popIn .3s cubic-bezier(.34,1.56,.64,1);
+}
+.modal-icon{font-size:56px;margin-bottom:16px}
+.modal-card h2{font-size:20px;font-weight:700;margin-bottom:8px;color:var(--text-main)}
+.modal-card p{color:var(--text-sub);font-size:14px;line-height:1.6;margin-bottom:24px}
+.modal-actions{display:flex;gap:12px;justify-content:center}
+
+/* Toast 通知 */
+.toast{
+  position:fixed;bottom:24px;right:24px;padding:14px 22px;border-radius:var(--radius-sm);
+  font-size:14px;font-weight:600;z-index:999999;box-shadow:var(--shadow-lg);
+  animation:slideIn .3s cubic-bezier(.34,1.56,.64,1);
+}
+.toast.success{background:var(--green-bg);border:1px solid var(--green-border);color:var(--green)}
+.toast.error{background:var(--red-bg);border:1px solid var(--red-border);color:var(--red)}
 @keyframes slideIn{from{transform:translateX(120%)}to{transform:translateX(0)}}
 
-/* 分页 */
-.pagination{display:flex;gap:8px;justify-content:flex-end;padding:16px 20px;border-top:1px solid var(--border)}
+.pagination{display:flex;gap:8px;justify-content:flex-end;padding:16px 24px;border-top:1px solid var(--border)}
 .page-btn{
-  background:var(--bg3);border:1px solid var(--border);border-radius:6px;
-  padding:6px 14px;font-size:13px;color:var(--text2);cursor:pointer;
+  background:var(--bg);border:1px solid var(--border);border-radius:8px;
+  padding:8px 16px;font-size:13px;color:var(--text-sub);cursor:pointer;font-weight:600;
 }
-.page-btn:hover,.page-btn.active{background:var(--blue2);color:var(--blue);border-color:var(--blue)}
+.page-btn:hover,.page-btn.active{background:var(--primary-light);color:var(--primary);border-color:var(--primary)}
 
-/* 响应式 */
 @media(max-width:768px){
   .layout{flex-direction:column}
   .sidebar{width:100%;height:auto}
-  .nav{flex-direction:row;overflow-x:auto;padding:8px}
-  .nav-item span:first-child{display:none}
-  .sidebar-bottom{display:none}
+  .nav{flex-direction:row;overflow-x:auto;padding:10px}
 }
 </style>
 </head>
@@ -195,10 +198,23 @@ select.form-control option{background:var(--bg3)}
   <div class="login-card">
     <div style="font-size:48px;margin-bottom:16px">🛡️</div>
     <h1>超级管理员控制台</h1>
-    <p>请输入管理员密钥以继续</p>
+    <p>请输入 Admin Key 管理密钥以继续</p>
     <input type="password" id="login-key" placeholder="输入 Admin Key..." onkeydown="if(event.key==='Enter')doLogin()"/>
-    <button class="btn btn-primary" onclick="doLogin()">🔑 登录后台</button>
-    <p id="login-err" style="color:var(--red);margin-top:12px;font-size:13px;display:none">密钥错误，请重试</p>
+    <button class="btn btn-primary" style="width:100%" onclick="doLogin()">🔑 登录系统</button>
+    <p id="login-err" style="color:var(--red);margin-top:14px;font-size:13px;display:none;font-weight:600">密钥错误，请重试</p>
+  </div>
+</div>
+
+<!-- 二次确认删除弹窗 -->
+<div class="modal-overlay" id="confirm-modal">
+  <div class="modal-card">
+    <div class="modal-icon">⚠️</div>
+    <h2 id="modal-title">确认删除题库批次？</h2>
+    <p id="modal-desc">即将物理删除题库《xxx》，此操作不可撤销，属于该题库下的所有题目将同步被清空！</p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeConfirmModal()">取消</button>
+      <button class="btn btn-danger" id="modal-confirm-btn" onclick="executeBatchDelete()">确认删除</button>
+    </div>
   </div>
 </div>
 
@@ -208,7 +224,7 @@ select.form-control option{background:var(--bg3)}
   <div class="sidebar">
     <div class="sidebar-brand">
       <span>🎯 考试助手</span>
-      <div style="font-size:11px;color:var(--text3);font-weight:400;margin-top:4px">Premium 管理后台</div>
+      <div style="font-size:11px;color:var(--text-sub);font-weight:500;margin-top:4px">Premium 浅色时尚版</div>
     </div>
     <nav class="nav">
       <button class="nav-item active" onclick="showPage('dashboard',this)">📊 <span>数据概览</span></button>
@@ -220,7 +236,7 @@ select.form-control option{background:var(--bg3)}
     <div class="sidebar-bottom">
       <div class="admin-badge">
         <div class="dot"></div>
-        <span style="font-size:13px;font-weight:600">管理员已登录</span>
+        <span>管理员已验证</span>
       </div>
     </div>
   </div>
@@ -231,30 +247,30 @@ select.form-control option{background:var(--bg3)}
     <!-- Dashboard -->
     <div class="page active" id="page-dashboard">
       <div class="page-title">📊 数据概览</div>
-      <div class="page-sub">实时统计系统运营数据</div>
+      <div class="page-sub">实时监控系统运行状态与交易数据</div>
       <div class="stats-grid">
         <div class="stat-card">
-          <div><div class="stat-label">总卡密数</div><div class="stat-value" id="s-total">-</div></div>
+          <div><div class="stat-label">总生成卡密</div><div class="stat-value" id="s-total">-</div></div>
           <div class="stat-icon">🎫</div>
         </div>
         <div class="stat-card">
-          <div><div class="stat-label">活跃卡密</div><div class="stat-value" id="s-active" style="color:var(--green)">-</div></div>
+          <div><div class="stat-label">活跃在用卡密</div><div class="stat-value" id="s-active" style="color:var(--green)">-</div></div>
           <div class="stat-icon">✅</div>
         </div>
         <div class="stat-card">
-          <div><div class="stat-label">今日搜题次数</div><div class="stat-value" id="s-searches" style="color:var(--blue)">-</div></div>
+          <div><div class="stat-label">今日搜题调用</div><div class="stat-value" id="s-searches" style="color:var(--primary)">-</div></div>
           <div class="stat-icon">🔍</div>
         </div>
         <div class="stat-card">
-          <div><div class="stat-label">累计成交额 (¥)</div><div class="stat-value" id="s-revenue" style="color:var(--gold)">-</div></div>
+          <div><div class="stat-label">累计成交额 (¥)</div><div class="stat-value" id="s-revenue" style="color:var(--amber)">-</div></div>
           <div class="stat-icon">💰</div>
         </div>
         <div class="stat-card">
-          <div><div class="stat-label">成功订单数</div><div class="stat-value" id="s-orders">-</div></div>
+          <div><div class="stat-label">已支付订单</div><div class="stat-value" id="s-orders">-</div></div>
           <div class="stat-icon">📦</div>
         </div>
         <div class="stat-card">
-          <div><div class="stat-label">公共题库题数</div><div class="stat-value" id="s-bank" style="color:var(--purple)">-</div></div>
+          <div><div class="stat-label">公共题库总题数</div><div class="stat-value" id="s-bank" style="color:#7c3aed">-</div></div>
           <div class="stat-icon">📚</div>
         </div>
       </div>
@@ -263,11 +279,10 @@ select.form-control option{background:var(--bg3)}
     <!-- 卡密管理 -->
     <div class="page" id="page-tokens">
       <div class="page-title">🎫 卡密管理</div>
-      <div class="page-sub">批量生成、查询与管控用户卡密</div>
+      <div class="page-sub">批量生成授权激活码与设备解绑管控</div>
 
-      <!-- 生成卡密 -->
       <div class="card">
-        <h3>🔧 批量生成卡密</h3>
+        <h3>⚡ 批量生成激活码</h3>
         <div class="form-row">
           <div class="form-group">
             <label>卡密类型</label>
@@ -287,33 +302,32 @@ select.form-control option{background:var(--bg3)}
           </div>
           <div class="form-group">
             <label>生成数量</label>
-            <input class="form-control" type="number" id="gen-count" value="10" min="1" max="200" style="width:80px"/>
+            <input class="form-control" type="number" id="gen-count" value="10" min="1" max="200" style="width:100px"/>
           </div>
           <div class="form-group" style="flex:1">
-            <label>备注（选填）</label>
-            <input class="form-control" type="text" id="gen-note" placeholder="如：微信自动发卡批次"/>
+            <label>批次备注（选填）</label>
+            <input class="form-control" type="text" id="gen-note" placeholder="如：微信客服直发批次"/>
           </div>
-          <button class="btn btn-success btn-sm" onclick="generateTokens()">⚡ 生成</button>
+          <button class="btn btn-primary" onclick="generateTokens()">生成激活码</button>
         </div>
-        <div id="gen-result" style="display:none">
+        <div id="gen-result" style="display:none;margin-top:16px">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-            <span style="font-size:13px;color:var(--text2)">生成成功，点击卡密一键复制</span>
-            <button class="btn btn-sm" style="background:var(--bg4);color:var(--text2);width:auto;border:1px solid var(--border)" onclick="copyAll()">📋 复制全部</button>
+            <span style="font-size:13px;color:var(--text-sub)">生成成功，点击下方卡密可一键复制</span>
+            <button class="btn btn-secondary btn-sm" onclick="copyAll()">📋 复制全部卡密</button>
           </div>
-          <div class="token-list" id="token-list"></div>
+          <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:16px;max-height:180px;overflow-y:auto" id="token-list"></div>
         </div>
       </div>
 
-      <!-- 卡密列表 -->
       <div class="table-wrap">
         <div class="table-header">
-          <h3>📋 全部卡密</h3>
-          <button class="btn btn-sm btn-primary" onclick="loadTokens()">🔄 刷新</button>
+          <h3>📋 全部激活码列表</h3>
+          <button class="btn btn-secondary btn-sm" onclick="loadTokens()">🔄 刷新列表</button>
         </div>
         <table>
           <thead>
             <tr>
-              <th>卡密</th><th>类型</th><th>状态</th><th>绑定设备</th><th>激活时间</th><th>到期时间</th><th>备注</th><th>操作</th>
+              <th>激活码</th><th>类型</th><th>状态</th><th>绑定设备</th><th>激活具体时间</th><th>到期时间</th><th>备注</th><th>操作</th>
             </tr>
           </thead>
           <tbody id="token-tbody"></tbody>
@@ -322,42 +336,56 @@ select.form-control option{background:var(--bg3)}
       </div>
     </div>
 
-    <!-- 公共题库 -->
+    <!-- 公共题库与批次管理 -->
     <div class="page" id="page-bank">
       <div class="page-title">📚 公共题库管理</div>
-      <div class="page-sub">上传标准 Excel 题库，供全体用户共享使用</div>
+      <div class="page-sub">上传与管理标准 Excel 题库批次，支持按上传时间二次确认删除</div>
 
       <div class="card">
-        <h3>📤 上传公共题库</h3>
-        <p style="color:var(--text2);font-size:13px;margin-bottom:16px">
-          标准格式列名：<code>序号</code> <code>题干</code> <code>答案</code> <code>详细答案</code>
+        <h3>📤 上传新公共题库</h3>
+        <p style="color:var(--text-sub);font-size:13px;margin-bottom:16px">
+          标准格式支持多列：<code>试题类型</code> | <code>题干</code> | <code>答案</code> | <code>选项A</code> | <code>选项B</code> | <code>选项C</code> | <code>选项D</code>
         </p>
         <div class="drop-zone" id="bank-drop" onclick="document.getElementById('bank-file').click()">
           <div class="dz-icon">📊</div>
-          <p>点击或拖拽 <strong>Excel / CSV</strong> 文件到此处上传</p>
-          <p style="font-size:12px;margin-top:8px;color:var(--text3)">支持 .xlsx .xls .csv 格式</p>
+          <p>点击或拖拽 <strong>Excel (.xlsx / .xls / .csv)</strong> 文件到此处上传</p>
+          <p style="font-size:12px;margin-top:8px;color:var(--text-muted)">自动识别独立选项列与题干，支持万级题目秒级解析</p>
         </div>
         <input type="file" id="bank-file" accept=".xlsx,.xls,.csv" style="display:none" onchange="uploadBank(this)"/>
         <div id="bank-upload-result" style="margin-top:16px;display:none"></div>
-        <div style="margin-top:16px;display:flex;gap:12px;align-items:center">
-          <span style="font-size:14px;color:var(--text2)">当前公共题库：<strong id="public-count" style="color:var(--green)">-</strong> 题</span>
-          <button class="btn btn-danger btn-sm" onclick="clearPublicBank()">🗑️ 清空公共题库</button>
+      </div>
+
+      <!-- 已上传批次列表 -->
+      <div class="table-wrap">
+        <div class="table-header">
+          <h3>📋 已上传题库批次记录 (支持二次确认安全删除)</h3>
+          <button class="btn btn-secondary btn-sm" onclick="loadBankBatches()">🔄 刷新批次</button>
         </div>
+        <table>
+          <thead>
+            <tr>
+              <th>批次 ID</th><th>题库文件名</th><th>上传具体时间</th><th>包含题目数</th><th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="batches-tbody">
+            <tr><td colspan="5" style="text-align:center;color:var(--text-sub);padding:32px">加载中...</td></tr>
+          </tbody>
+        </table>
       </div>
     </div>
 
     <!-- 订单记录 -->
     <div class="page" id="page-orders">
       <div class="page-title">💳 订单记录</div>
-      <div class="page-sub">查看用户支付订单与自动发卡记录</div>
+      <div class="page-sub">查看用户自助支付购买与自动发卡记录</div>
       <div class="table-wrap">
-        <div class="table-header"><h3>📋 订单列表</h3></div>
+        <div class="table-header"><h3>📋 支付订单列表</h3></div>
         <table>
           <thead>
-            <tr><th>订单号</th><th>套餐</th><th>金额</th><th>状态</th><th>支付时间</th><th>发放 Token</th></tr>
+            <tr><th>订单号</th><th>购买套餐</th><th>金额</th><th>状态</th><th>支付时间</th><th>自动发放激活码</th></tr>
           </thead>
           <tbody id="orders-tbody">
-            <tr><td colspan="6" style="text-align:center;color:var(--text3);padding:32px">暂无订单数据</td></tr>
+            <tr><td colspan="6" style="text-align:center;color:var(--text-sub);padding:32px">暂无订单数据</td></tr>
           </tbody>
         </table>
       </div>
@@ -366,28 +394,28 @@ select.form-control option{background:var(--bg3)}
     <!-- 系统设置 -->
     <div class="page" id="page-settings">
       <div class="page-title">⚙️ 系统设置</div>
-      <div class="page-sub">配置支付接口与系统参数</div>
+      <div class="page-sub">配置聚合支付接口与系统高级参数</div>
 
       <div class="card">
-        <h3>💳 易支付 (EPay) 配置</h3>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-          <div class="form-group"><label>EPay PID</label><input class="form-control" id="cfg-epay_pid" placeholder="商户 PID"/></div>
-          <div class="form-group"><label>EPay KEY</label><input class="form-control" id="cfg-epay_key" type="password" placeholder="商户密钥"/></div>
-          <div class="form-group" style="grid-column:1/-1"><label>EPay API 地址</label><input class="form-control" id="cfg-epay_api" placeholder="https://pay.xxx.com"/></div>
-          <div class="form-group"><label>支付成功通知地址 (notify_url)</label><input class="form-control" id="cfg-notify_url" placeholder="https://yourdomain.com/api/pay/notify"/></div>
-          <div class="form-group"><label>支付成功跳转地址 (return_url)</label><input class="form-control" id="cfg-return_url" placeholder="https://yourdomain.com/?order_id=xxx"/></div>
+        <h3>💳 易支付 (EPay) 网关配置</h3>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+          <div class="form-group"><label>EPay 商户 PID</label><input class="form-control" id="cfg-epay_pid" placeholder="商户 PID"/></div>
+          <div class="form-group"><label>EPay 商户 KEY</label><input class="form-control" id="cfg-epay_key" type="password" placeholder="商户密钥"/></div>
+          <div class="form-group" style="grid-column:1/-1"><label>EPay API 接口地址</label><input class="form-control" id="cfg-epay_api" placeholder="https://pay.xxx.com"/></div>
+          <div class="form-group"><label>异步通知地址 (notify_url)</label><input class="form-control" id="cfg-notify_url" placeholder="https://yourdomain.com/api/pay/notify"/></div>
+          <div class="form-group"><label>跳转同步地址 (return_url)</label><input class="form-control" id="cfg-return_url" placeholder="https://yourdomain.com/?order_id=xxx"/></div>
         </div>
       </div>
 
       <div class="card">
         <h3>🔑 管理员密钥</h3>
         <div class="form-group">
-          <label>当前 Admin Key（只读，不可在此修改）</label>
+          <label>当前 Admin Key（系统只读显示）</label>
           <input class="form-control" id="cfg-admin_key_display" readonly style="font-family:monospace"/>
         </div>
       </div>
 
-      <button class="btn btn-primary" style="width:auto;padding:12px 32px" onclick="saveSettings()">💾 保存设置</button>
+      <button class="btn btn-primary" style="padding:12px 36px" onclick="saveSettings()">💾 保存设置</button>
     </div>
 
   </div><!-- /content -->
@@ -396,6 +424,8 @@ select.form-control option{background:var(--bg3)}
 <script>
 let ADMIN_KEY = '';
 let tokenPage = 1;
+let deletingBatchId = null;
+let deletingBatchName = '';
 
 // ── 登录 ────────────────────────────────────────────────────────────────────
 async function doLogin(){
@@ -407,10 +437,10 @@ async function doLogin(){
   }
   ADMIN_KEY = key;
   document.getElementById('login-overlay').style.display='none';
-  loadDashboard(); loadTokens(); loadBankInfo(); loadSettings();
+  loadDashboard(); loadTokens(); loadBankInfo(); loadBankBatches(); loadSettings();
 }
 
-// ── 导航 ─────────────────────────────────────────────────────────────────────
+// ── 导航切换 ─────────────────────────────────────────────────────────────────
 function showPage(name, el){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(b=>b.classList.remove('active'));
@@ -418,7 +448,7 @@ function showPage(name, el){
   el.classList.add('active');
   if(name==='dashboard') loadDashboard();
   if(name==='tokens') loadTokens();
-  if(name==='bank') loadBankInfo();
+  if(name==='bank') { loadBankInfo(); loadBankBatches(); }
   if(name==='settings') loadSettings();
 }
 
@@ -434,7 +464,7 @@ async function loadDashboard(){
   document.getElementById('s-bank').textContent     = r.public_bank;
 }
 
-// ── 卡密管理 ─────────────────────────────────────────────────────────────────
+// ── 卡密生成与管理 ──────────────────────────────────────────────────────────
 document.getElementById('gen-type').addEventListener('change', function(){
   document.getElementById('gen-days-wrap').style.display = this.value==='LIFETIME'?'none':'flex';
 });
@@ -450,17 +480,16 @@ async function generateTokens(){
   if(!r) return;
   const list = document.getElementById('token-list');
   list.innerHTML = r.tokens.map(t=>
-    `<div class="token-item"><code>${t}</code><button class="btn btn-sm" style="background:none;color:var(--text3);width:auto;border:1px solid var(--border);padding:3px 10px" onclick="copy('${t}')">复制</button></div>`
+    `<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)"><code>${t}</code><button class="btn btn-secondary btn-sm" onclick="copy('${t}')">复制</button></div>`
   ).join('');
   document.getElementById('gen-result').style.display='block';
-  toast('✅ 成功生成 '+r.count+' 个卡密','success');
+  toast('✅ 成功批量生成 '+r.count+' 个激活码','success');
   loadTokens();
 }
 
-let allGenTokens = [];
 function copyAll(){
   const tokens = [...document.querySelectorAll('#token-list code')].map(c=>c.textContent).join('\n');
-  navigator.clipboard.writeText(tokens).then(()=>toast('📋 已复制全部卡密','success'));
+  navigator.clipboard.writeText(tokens).then(()=>toast('📋 已复制全部激活码','success'));
 }
 
 async function loadTokens(page=1){
@@ -470,23 +499,22 @@ async function loadTokens(page=1){
   const tbody = document.getElementById('token-tbody');
   tbody.innerHTML = r.items.map(t=>`
     <tr>
-      <td><code style="font-size:11px">${t.token}</code></td>
-      <td>${t.card_type==='LIFETIME'?'<span class="badge badge-gold">买断</span>':'<span class="badge badge-blue">'+t.days+'天</span>'}</td>
-      <td>${t.is_active?'<span class="badge badge-green">有效</span>':'<span class="badge badge-red">禁用</span>'}</td>
-      <td style="font-size:11px;color:var(--text3)">${t.device_id?t.device_id.substring(0,20)+'...':'未激活'}</td>
-      <td style="font-size:11px;color:var(--text2)">${t.activated_at||'-'}</td>
-      <td style="font-size:11px;color:${t.expires_at?'var(--text2)':'var(--green)'}">${t.expires_at||'永久'}</td>
-      <td style="font-size:11px;color:var(--text3)">${t.note||'-'}</td>
+      <td><code>${t.token}</code></td>
+      <td>${t.card_type==='LIFETIME'?'<span class="badge badge-gold">买断卡</span>':'<span class="badge badge-blue">'+t.days+'天</span>'}</td>
+      <td>${t.is_active?'<span class="badge badge-green">有效</span>':'<span class="badge badge-red">已禁用</span>'}</td>
+      <td style="font-size:12px;color:var(--text-sub)">${t.device_id?t.device_id.substring(0,18)+'...':'未激活'}</td>
+      <td style="font-size:12px;color:var(--text-sub)">${t.activated_at||'-'}</td>
+      <td style="font-size:12px;color:${t.expires_at?'var(--text-sub)':'var(--green)'}">${t.expires_at||'永久'}</td>
+      <td style="font-size:12px;color:var(--text-sub)">${t.note||'-'}</td>
       <td>
         <div style="display:flex;gap:6px">
-          ${t.device_id?`<button class="btn btn-sm" style="background:var(--gold2);color:var(--gold);border:1px solid var(--gold);width:auto;padding:5px 10px" onclick="unbind('${t.token}')">解绑</button>`:''}
-          <button class="btn btn-sm btn-danger" style="width:auto;padding:5px 10px" onclick="revoke('${t.token}')">吊销</button>
+          ${t.device_id?`<button class="btn btn-secondary btn-sm" onclick="unbind('${t.token}')">解绑</button>`:''}
+          <button class="btn btn-danger btn-sm" onclick="revoke('${t.token}')">吊销</button>
         </div>
       </td>
     </tr>
-  `).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--text3);padding:32px">暂无卡密</td></tr>';
+  `).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--text-sub);padding:32px">暂无卡密</td></tr>';
 
-  // 分页
   const totalPages = Math.ceil(r.total / 20);
   const pg = document.getElementById('token-pagination');
   let pgHtml = '';
@@ -496,20 +524,69 @@ async function loadTokens(page=1){
 }
 
 async function unbind(token){
-  if(!confirm('确认解绑该卡密的设备？')) return;
+  if(!confirm('确认解绑该卡密的设备？解绑后用户可在新设备重新激活')) return;
   await apiFetch('/api/admin/tokens/unbind',{method:'POST',body:JSON.stringify({token})});
-  toast('✅ 设备已解绑','success'); loadTokens(tokenPage);
-}
-async function revoke(token){
-  if(!confirm('确认吊销该卡密？操作不可撤销！')) return;
-  await apiFetch('/api/admin/tokens/revoke',{method:'POST',body:JSON.stringify({token})});
-  toast('✅ 卡密已吊销','success'); loadTokens(tokenPage);
+  toast('✅ 设备解绑成功','success'); loadTokens(tokenPage);
 }
 
-// ── 题库管理 ─────────────────────────────────────────────────────────────────
+async function revoke(token){
+  if(!confirm('确认吊销该卡密？吊销后将无法继续搜题！')) return;
+  await apiFetch('/api/admin/tokens/revoke',{method:'POST',body:JSON.stringify({token})});
+  toast('✅ 卡密吊销成功','success'); loadTokens(tokenPage);
+}
+
+// ── 题库与批次二次确认管理 ─────────────────────────────────────────────────
 async function loadBankInfo(){
   const r = await apiFetch('/api/bank/info');
-  if(r) document.getElementById('public-count').textContent = r.public;
+  if(r) document.getElementById('s-bank').textContent = r.public;
+}
+
+async function loadBankBatches(){
+  const r = await apiFetch('/api/admin/bank/batches');
+  if(!r) return;
+  const tbody = document.getElementById('batches-tbody');
+  tbody.innerHTML = r.map(b=>`
+    <tr>
+      <td><code>#${b.id}</code></td>
+      <td><strong style="color:var(--text-main)">${b.batch_name}</strong></td>
+      <td style="color:var(--text-sub);font-size:13px">${b.created_at}</td>
+      <td><span class="badge badge-green">${b.total_count} 题</span></td>
+      <td>
+        <button class="btn btn-danger btn-sm" onclick="openConfirmModal(${b.id}, '${b.batch_name}', ${b.total_count})">🗑️ 删除题库</button>
+      </td>
+    </tr>
+  `).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--text-sub);padding:32px">暂无已上传的题库批次</td></tr>';
+}
+
+function openConfirmModal(id, name, count){
+  deletingBatchId = id;
+  deletingBatchName = name;
+  document.getElementById('modal-title').textContent = `确认删除题库批次 #${id}？`;
+  document.getElementById('modal-desc').innerHTML = `您即将物理删除题库文件：<br/><strong style="color:var(--primary)">《${name}》</strong><br/>该批次下的 <strong style="color:var(--red)">${count} 道题目</strong> 将会被同步删除，此操作不可撤销！`;
+  document.getElementById('confirm-modal').classList.add('show');
+}
+
+function closeConfirmModal(){
+  deletingBatchId = null;
+  document.getElementById('confirm-modal').classList.remove('show');
+}
+
+async function executeBatchDelete(){
+  if(!deletingBatchId) return;
+  const btn = document.getElementById('modal-confirm-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ 正在物理删除...';
+
+  const r = await apiFetch(`/api/admin/bank/batch/${deletingBatchId}?confirm_text=CONFIRM`, {method:'DELETE'});
+  btn.disabled = false;
+  btn.textContent = '确认删除';
+  closeConfirmModal();
+
+  if(r?.success){
+    toast('✅ 题库批次已安全删除','success');
+    loadBankInfo();
+    loadBankBatches();
+  }
 }
 
 // 拖拽上传
@@ -533,28 +610,23 @@ async function doUploadBank(file){
   fd.append('admin_key', ADMIN_KEY);
   const result = document.getElementById('bank-upload-result');
   result.style.display='block';
-  result.innerHTML = '<span style="color:var(--text2)">⏳ 正在解析并导入题库...</span>';
+  result.innerHTML = '<span style="color:var(--text-sub)">⏳ 正在解析并导入题库...</span>';
   try{
     const r = await fetch('/api/bank/upload',{method:'POST',body:fd});
     const data = await r.json();
     if(r.ok && data.success){
-      result.innerHTML = `<span style="color:var(--green)">✅ 成功导入 <strong>${data.imported}</strong> 道题目</span>`;
+      result.innerHTML = `<span style="color:var(--green);font-weight:700">✅ 成功导入文件 《${file.name}》 共 <strong>${data.imported}</strong> 道题目！</span>`;
       toast('✅ 题库导入成功：'+data.imported+' 题','success');
       loadBankInfo();
+      loadBankBatches();
     }else{
-      const errDetail = data.detail || data.msg || '格式错误或包含无法识别的字符';
-      result.innerHTML = `<span style="color:var(--red)">❌ 导入失败: ${errDetail}</span>`;
+      const errDetail = data.detail || data.msg || '格式错误';
+      result.innerHTML = `<span style="color:var(--red);font-weight:600">❌ 导入失败: ${errDetail}</span>`;
       toast('❌ 导入失败: '+errDetail, 'error');
     }
   }catch(e){
-    result.innerHTML = `<span style="color:var(--red)">❌ 请求失败: ${e.message}</span>`;
+    result.innerHTML = `<span style="color:var(--red);font-weight:600">❌ 请求失败: ${e.message}</span>`;
   }
-}
-
-async function clearPublicBank(){
-  if(!confirm('确认清空全部公共题库？此操作不可撤销！')) return;
-  const r = await apiFetch(`/api/bank/clear?target=public&admin_key=${ADMIN_KEY}`,{method:'DELETE'});
-  if(r?.success){ toast('✅ 公共题库已清空','success'); loadBankInfo(); }
 }
 
 // ── 设置 ─────────────────────────────────────────────────────────────────────
@@ -574,7 +646,7 @@ async function saveSettings(){
     data[k] = document.getElementById('cfg-'+k)?.value||'';
   });
   const r = await apiFetch('/api/admin/settings',{method:'POST',body:JSON.stringify(data)});
-  if(r?.success) toast('✅ 设置已保存','success');
+  if(r?.success) toast('✅ 系统设置已保存','success');
 }
 
 // ── 工具 ─────────────────────────────────────────────────────────────────────
@@ -582,15 +654,15 @@ async function apiFetch(url, opts={}){
   const headers = {'Content-Type':'application/json','X-Admin-Key':ADMIN_KEY,...(opts.headers||{})};
   try{
     const r = await fetch(url, {...opts, headers});
-    if(!r.ok){ toast('❌ API 错误: '+r.status,'error'); return null; }
+    if(!r.ok){ toast('❌ API 请求错误: '+r.status,'error'); return null; }
     return await r.json();
   }catch(e){
-    toast('❌ 网络错误','error'); return null;
+    toast('❌ 网络连接错误','error'); return null;
   }
 }
 
 function copy(text){
-  navigator.clipboard.writeText(text).then(()=>toast('📋 已复制','success'));
+  navigator.clipboard.writeText(text).then(()=>toast('📋 已复制激活码','success'));
 }
 
 function toast(msg, type='success'){

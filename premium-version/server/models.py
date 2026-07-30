@@ -71,10 +71,22 @@ def init_db():
         )
     """)
 
+    # ── 题库上传批次表 ────────────────────────────────────────────────────────
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS bank_batches (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            batch_name  TEXT NOT NULL,
+            target      TEXT DEFAULT 'public',
+            total_count INTEGER DEFAULT 0,
+            created_at  TEXT DEFAULT (datetime('now','localtime'))
+        )
+    """)
+
     # ── 公共题库表 ────────────────────────────────────────────────────────────
     c.execute("""
         CREATE TABLE IF NOT EXISTS public_bank (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            batch_id    INTEGER DEFAULT 0,
             title       TEXT NOT NULL,          -- 题干（原始文本）
             title_clean TEXT NOT NULL,          -- 题干（清洗后，用于模糊匹配）
             answer      TEXT NOT NULL,          -- 答案（如：A 或 AB 或 正确）

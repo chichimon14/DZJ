@@ -307,17 +307,73 @@ async def upload_bank(
 
         conn = models.get_db()
         is_private = (target == "private")
-        count = exam_parser.import_to_db(conn, rows, is_private=is_private, source=token if is_private else "admin")
+        batch_id = 0
+
+        # 如果是公共题库，先在 bank_batches 插入批次记录
+        if not is_private:
+            cur = conn.execute("""
+                INSERT INTO bank_batches (batch_name, target, total_count)
+                VALUES (?, 'public', ?)
+            """, (file.filename, len(rows)))
+            batch_id = cur.lastrowid
+
+        count = exam_parser.import_to_db(conn, rows, is_private=is_private, source=token if is_private else file.filename, batch_id=batch_id)
+
+        # 更新批次的实际成功插入数
+        if batch_id > 0:
+            conn.execute("UPDATE bank_batches SET total_count = ? WHERE id = ?", (count, batch_id))
+            conn.commit()
+
         conn.close()
 
         if not is_private:
             reload_public_cache()
 
-        return {"success": True, "imported": count, "target": target}
+        return {"success": True, "imported": count, "target": target, "batch_id": batch_id}
 
     except Exception as g_err:
         traceback.print_exc()
         return JSONResponse({"success": False, "msg": f"系统内部异常: {str(g_err)}"}, status_code=500)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 路由：管理员题库批次列表与按批次二次确认删除
+# ──────────────────────────────────────────────────────────────────────────────
+
+@app.get("/api/admin/bank/batches")
+async def get_bank_batches(admin_key: str = Header("", alias="X-Admin-Key")):
+    if not auth.verify_admin(admin_key):
+        raise HTTPException(403, "权限不足")
+    conn = models.get_db()
+    rows = conn.execute("""
+        SELECT id, batch_name, target, total_count, created_at
+        FROM bank_batches
+        ORDER BY id DESC
+    """).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+@app.delete("/api/admin/bank/batch/{batch_id}")
+async def delete_bank_batch(
+    batch_id: int,
+    confirm_text: str = Query("", description="二次确认匹配文本，必须为 'CONFIRM'"),
+    admin_key: str = Header("", alias="X-Admin-Key"),
+):
+    if not auth.verify_admin(admin_key):
+        raise HTTPException(403, "权限不足")
+    if confirm_text != "CONFIRM":
+        raise HTTPException(400, "二次确认校验失败，请传入 confirm_text=CONFIRM")
+
+    conn = models.get_db()
+    # 物理删除该批次的库与题目
+    conn.execute("DELETE FROM public_bank WHERE batch_id = ?", (batch_id,))
+    conn.execute("DELETE FROM bank_batches WHERE id = ?", (batch_id,))
+    conn.commit()
+    conn.close()
+
+    reload_public_cache()
+    return {"success": True, "msg": f"题库批次 #{batch_id} 已安全成功删除"}
 
 
 @app.delete("/api/bank/clear")

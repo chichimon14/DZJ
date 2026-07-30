@@ -174,7 +174,7 @@ def parse_excel(file_path: str, token: str = None) -> List[Dict[str, Any]]:
     return results
 
 
-def import_to_db(conn, rows: List[Dict[str, Any]], is_private: bool = False, source: str = 'upload') -> int:
+def import_to_db(conn, rows: List[Dict[str, Any]], is_private: bool = False, source: str = 'upload', batch_id: int = 0) -> int:
     """将解析结果批量写入数据库（使用 executemany 极速事务处理）"""
     if not rows:
         return 0
@@ -187,10 +187,10 @@ def import_to_db(conn, rows: List[Dict[str, Any]], is_private: bool = False, sou
         data = rows
     else:
         sql = """
-            INSERT INTO public_bank (title, title_clean, answer, opt_a, opt_b, opt_c, opt_d, q_type, source)
-            VALUES (:title, :title_clean, :answer, :opt_a, :opt_b, :opt_c, :opt_d, :q_type, :source)
+            INSERT INTO public_bank (batch_id, title, title_clean, answer, opt_a, opt_b, opt_c, opt_d, q_type, source)
+            VALUES (:batch_id, :title, :title_clean, :answer, :opt_a, :opt_b, :opt_c, :opt_d, :q_type, :source)
         """
-        data = [{**r, 'source': source} for r in rows]
+        data = [{**r, 'source': source, 'batch_id': batch_id} for r in rows]
 
     try:
         conn.executemany(sql, data)
