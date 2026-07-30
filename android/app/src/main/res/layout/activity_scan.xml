@@ -5,8 +5,8 @@
     android:layout_height="match_parent"
     android:background="#080B14">
 
-    <!-- 相机预览控件 -->
-    <androidx.camera.view.PreviewView
+    <!-- 扫码相机控件 -->
+    <com.journeyapps.barcodescanner.DecoratedBarcodeView
         android:id="@+id/previewView"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
