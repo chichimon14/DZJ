@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         网页考试助手 Premium v66 - 终极全兼容判断题自动勾选版
+// @name         网页考试助手 Premium v70 - 融合v51稳定版精髓大一统版
 // @namespace    http://tampermonkey.net/
-// @version      66.0.0
-// @description  云端 HTTP 纯GM极速直连 + 彻底打通 WRONG/CORRECT/对/错 判断题自动勾选 + 全平台
+// @version      70.0.0
+// @description  云端 HTTP 纯GM直连 + 融合 v51 本地稳定版题干提取与最叶子节点点击算法 + 全平台
 // @author       Antigravity
 // @match        *://*/*
 // @grant        GM_addStyle
@@ -539,112 +539,106 @@
             .trim();
     }
 
-    function getExactStemText() {
-        // 1. 先定位【上一题】或【下一题】按钮
-        let anchorBtn = null;
-        const allBtns = Array.from(document.querySelectorAll('button, div, a, span'));
-        for (const b of allBtns) {
-            if (b.closest('#exam-assistant-container')) continue;
-            const txt = b.textContent.trim();
-            if (/^下一题$|^上一题$/.test(txt) && b.offsetParent !== null) {
-                anchorBtn = b;
-                break;
-            }
-        }
-
-        // 2. 向上寻找包含该按钮的【中央主答题大卡片】容器
-        let mainExamCard = null;
-        if (anchorBtn) {
-            let p = anchorBtn.parentElement;
-            while (p && p !== document.body) {
-                if (p.offsetWidth > 280 && p.offsetHeight > 180 && !p.closest('#exam-assistant-container')) {
-                    mainExamCard = p;
-                    break;
+    // ===== 融合 v51 稳定版：物理坐标定位 + 题号锁定算法 =====
+    function getRawTitleText() {
+        const sels = [
+            '.ques-title', '.question-title', '.question-item-title', '.question-content',
+            '.ques-name', '.question_title', '[class*="ques-title"]', '[class*="question-title"]',
+            '[class*="ques-name"]', '[class*="stem"]'
+        ];
+        for (const sel of sels) {
+            try {
+                const el = document.querySelector(sel);
+                if (el && container && !container.contains(el)) {
+                    const t = (el.innerText || el.textContent || '').trim();
+                    if (t.length >= 4) return t;
                 }
-                p = p.parentElement;
-            }
+            } catch (e) {}
         }
 
-        // 兜底方案：若找不到按钮，通过选项容器 A. / B. 向外溯源找到主答题卡片
-        if (!mainExamCard) {
-            const options = findAllOptionElements();
-            if (options.length > 0) {
-                const firstOpt = options[0];
-                mainExamCard = firstOpt.closest('form, section, div[class*="question"], div[class*="paper"]') 
-                    || firstOpt.parentElement?.parentElement?.parentElement 
-                    || document.body;
-            }
+        // 物理坐标隔离：遍历 DOM，绝对屏蔽 left < 160px 的左侧姓名栏与答题卡
+        for (const el of document.querySelectorAll('body div, body p, body span, body section, body h3, body h4')) {
+            if (container && container.contains(el)) continue;
+            if (el.children.length > 3) continue;
+
+            try {
+                const rect = el.getBoundingClientRect();
+                if (rect.left < 160 || rect.width < 80) continue;
+            } catch (e) { continue; }
+
+            const t = (el.innerText || el.textContent || '').trim();
+            if (/判断下列说法是否正确|根据题干信息|在选项中|选择合适的答案|至少选择\d+个/i.test(t) && t.length < 55) continue;
+
+            if (t.length >= 5 && t.length <= 800 && /^\d+[、.（(]/.test(t)) return t;
         }
 
-        if (!mainExamCard) mainExamCard = document.body;
+        // 备用：中央大卡片区域遍历
+        for (const el of document.querySelectorAll('body p, body div')) {
+            if (container && container.contains(el)) continue;
+            if (el.children.length > 2) continue;
+            try {
+                const rect = el.getBoundingClientRect();
+                if (rect.left < 160) continue;
+            } catch (e) { continue; }
 
-        // 3. 在 mainExamCard 范围内提取真正的题干文本
-        const nodes = Array.from(mainExamCard.querySelectorAll('div, p, span, h3, h4, h5, section'));
-        for (const node of nodes) {
-            if (node.closest('#exam-assistant-container')) continue;
-            if (node.offsetParent === null) continue;
-            if (node.children.length > 3) continue;
-
-            let text = node.textContent.trim();
-            if (text.length < 4 || text.length > 800) continue;
-
-            // 绝杀排除：考生姓名、关号、准考证、答题卡、已做未做等头部干扰文本
-            if (/姓\s*名|关\s*号|准考证|考生|题卡|已做|未做|完成题数/i.test(text)) continue;
-
-            // 排除纯规则引导栏 ("63、 判断题：判断下列说法是否正确。(1分)" / "根据题干信息，选择合适的答案")
-            if (/判断下列说法是否正确|根据题干信息|在选项中|选择合适的答案|至少选择\d+个/i.test(text) && text.length < 55) continue;
-            if (/^\d*[\s、.]*(单选题|多选题|判断题|填空题)[：:\s]*(判断下列|根据题干|选择|请选择)/i.test(text) && text.length < 55) continue;
-
-            // 排除选项节点 (如 "A. 签发植物检疫证书")
-            if (/^\s*[（(]?[A-Da-d][)）.、：:\s]/.test(text)) continue;
-
-            // 排除按钮
-            if (/^(上一题|下一题|提交|答题卡|交卷|搜索|搜题)$/.test(text)) continue;
-
-            // 提纯净化：剥离段落开头的无用引导说明
-            text = text
-                .replace(/^\d*[\s、.]*(单选题|多选题|判断题|填空题)[：:\s]*/gi, '')
-                .replace(/判断下列说法是否正确[。！!\s]*/gi, '')
-                .replace(/根据题干信息.*?选择.*?答案[。！!\s]*/gi, '')
-                .replace(/在选项中.*?选择[。！!\s]*/gi, '')
-                .replace(/[（(]\s*\d+\s*分[）)]/gi, '')
-                .replace(/^\d+[\s、.．]+/, '')
-                .trim();
-
-            if (text.length >= 4) {
-                return text;
+            const t = (el.innerText || el.textContent || '').trim();
+            if (t.length >= 8 && t.length <= 600 && !/姓\s*名|关\s*号|准考证|答题卡|已做|未做/i.test(t)) {
+                if (!/判断下列说法是否正确|根据题干信息/i.test(t)) return t;
             }
         }
         return '';
     }
 
+    function getExactStemText() {
+        const raw = getRawTitleText();
+        if (!raw || raw.length < 4) return '';
+        return raw
+            .replace(/^[（(]?\d+[）).、\s]*/, '')
+            .replace(/^(单选题|多选题|判断题|填空题|问答题)[：:\s]*/, '')
+            .replace(/判断下列说法是否正确[。！!\s]*/gi, '')
+            .replace(/根据题干信息.*?选择.*?答案[。！!\s]*/gi, '')
+            .replace(/在选项中.*?选择[。！!\s]*/gi, '')
+            .replace(/\(\s*\d+\s*分\s*\)/g, '')
+            .replace(/^\d+[\s、.．]+/, '')
+            .trim();
+    }
+
+    // ===== 融合 v51 稳定版：最短叶子节点法则 + 140ms 队列点击算法 =====
     function autoCheckJudge(answerStr) {
         const isCorrect = /^(CORRECT|TRUE|对|正确|√|A|1)$/i.test((answerStr || '').toString().trim());
-        const elements = findAllOptionElements();
+        const targetLetters = isCorrect ? ['A'] : ['B'];
+        const ALL_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F'];
 
-        // 目标索引：正确选 A (索引0)，错误选 B (索引1)
-        const targetIdx = isCorrect ? 0 : 1;
-        const targetKw  = isCorrect ? ['a', '对', '正确', '√'] : ['b', '错', '错误', '×'];
+        targetLetters.forEach((letter, index) => {
+            const delay = index * 140;
+            setTimeout(() => {
+                const letterPrefixes = isCorrect ? ['A.', 'A、', 'A', '对', '正确', '√'] : ['B.', 'B、', 'B', '错', '错误', '×'];
+                const otherLetters = ALL_LETTERS.filter(l => l !== letter);
 
-        let hitEl = null;
-        for (const el of elements) {
-            const txt = el.textContent.trim().toLowerCase();
-            if (targetKw.some(k => txt.includes(k))) {
-                hitEl = el;
-                break;
-            }
-        }
+                const candidateNodes = Array.from(document.querySelectorAll('body *')).filter(el => {
+                    if (container && container.contains(el)) return false;
+                    const text = (el.innerText || el.textContent || '').trim();
+                    if (!text || text.length > 300) return false;
 
-        if (!hitEl && elements[targetIdx]) {
-            hitEl = elements[targetIdx];
-        }
+                    const containsOtherOptions = otherLetters.some(ol =>
+                        text.includes(`${ol}.`) || text.includes(`${ol}、`) || text.includes(`${ol}:`)
+                    );
+                    if (containsOtherOptions) return false;
 
-        if (hitEl) {
-            smartClickOption(hitEl);
-            setDebug(`✅ 判断题已选: ${isCorrect ? 'A. 正确/对' : 'B. 错误/错'}`);
-        } else {
-            setDebug(`⚠️ 判断题未定位到选项: ${isCorrect ? 'A. 对' : 'B. 错'}`);
-        }
+                    return letterPrefixes.some(p => text.startsWith(p)) || text === letter;
+                });
+
+                if (candidateNodes.length > 0) {
+                    candidateNodes.sort((a, b) => (a.innerText || '').length - (b.innerText || '').length);
+                    smartClickOption(candidateNodes[0]);
+                    setDebug(`✅ 判断题已选 ${letter}: "${(candidateNodes[0].innerText || '').trim().slice(0, 15)}"`);
+                } else {
+                    const fallbackEls = findAllOptionElements();
+                    const targetIdx = isCorrect ? 0 : 1;
+                    if (fallbackEls[targetIdx]) smartClickOption(fallbackEls[targetIdx]);
+                }
+            }, delay);
+        });
     }
 
     // ===== 3 秒全自动切题与全局守护机制 =====
