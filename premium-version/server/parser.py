@@ -105,34 +105,62 @@ def parse_excel(file_path: str, token: str = None) -> List[Dict[str, Any]]:
                     return col
         return None
 
-    col_id     = find_col(['序号', '编号', 'id', 'ID'])
     col_title  = find_col(['题干', '试题内容', '题目', '问题'])
-    col_answer = find_col(['答案'], exclude=['详细', '解析', '选项'])
-    col_detail = find_col(['详细答案', '选项', '解析'])
+    col_answer = find_col(['答案'], exclude=['详细', '解析'])
+    col_opt_a  = find_col(['选项A', '选项 a', '选项_A', 'A选项'])
+    col_opt_b  = find_col(['选项B', '选项 b', '选项_B', 'B选项'])
+    col_opt_c  = find_col(['选项C', '选项 c', '选项_C', 'C选项'])
+    col_opt_d  = find_col(['选项D', '选项 d', '选项_D', 'D选项'])
+    col_detail = find_col(['详细答案', '解析', '选项'])
 
+    # 位置兜底规则
     if not col_title:
-        # 按位置兜底：第 2 列为题干
         col_title = columns[1] if len(columns) > 1 else columns[0]
     if not col_answer:
         col_answer = columns[2] if len(columns) > 2 else None
-    if not col_detail:
-        col_detail = columns[3] if len(columns) > 3 else None
+
+    # 如果没有找到独立的选项列，尝试按表格后几列兜底
+    if not col_opt_a and len(columns) >= 4 and col_answer != columns[3]:
+        col_opt_a = columns[3]
+    if not col_opt_b and len(columns) >= 5 and col_answer != columns[4]:
+        col_opt_b = columns[4]
+    if not col_opt_c and len(columns) >= 6 and col_answer != columns[5]:
+        col_opt_c = columns[5]
+    if not col_opt_d and len(columns) >= 7 and col_answer != columns[6]:
+        col_opt_d = columns[6]
 
     results = []
     for _, row in df.iterrows():
-        raw_title  = str(row[col_title]).strip() if col_title else ''
-        raw_answer = str(row[col_answer]).strip() if col_answer else ''
-        raw_detail = str(row[col_detail]).strip() if col_detail else ''
+        raw_title  = str(row[col_title]).strip() if col_title and col_title in row else ''
+        raw_answer = str(row[col_answer]).strip() if col_answer and col_answer in row else ''
 
         if not raw_title or raw_title == 'nan':
             continue
 
         title_clean = clean_text(raw_title)
-        q_type      = detect_question_type(raw_answer, raw_detail)
-        norm_answer = normalize_answer(raw_answer, q_type)
-        opts        = extract_options(raw_detail) if q_type == 'choice' else {'A': '', 'B': '', 'C': '', 'D': ''}
 
-        row_data = {
+        # 提取选项 A/B/C/D
+        opts = {'A': '', 'B': '', 'C': '', 'D': ''}
+        if col_opt_a and col_opt_a in row and str(row[col_opt_a]).strip() != 'nan':
+            opts['A'] = str(row[col_opt_a]).strip()
+        if col_opt_b and col_opt_b in row and str(row[col_opt_b]).strip() != 'nan':
+            opts['B'] = str(row[col_opt_b]).strip()
+        if col_opt_c and col_opt_c in row and str(row[col_opt_c]).strip() != 'nan':
+            opts['C'] = str(row[col_opt_c]).strip()
+        if col_opt_d and col_opt_d in row and str(row[col_opt_d]).strip() != 'nan':
+            opts['D'] = str(row[col_opt_d]).strip()
+
+        # 如果独立选项列全空，退回从"详细答案/解析"中正则提取
+        if not any(opts.values()) and col_detail and col_detail in row:
+            raw_detail = str(row[col_detail]).strip()
+            opts = extract_options(raw_detail)
+            q_type = detect_question_type(raw_answer, raw_detail)
+        else:
+            q_type = 'choice' if any(opts.values()) else detect_question_type(raw_answer, '')
+
+        norm_answer = normalize_answer(raw_answer, q_type)
+
+        results.append({
             'title':       raw_title,
             'title_clean': title_clean,
             'answer':      norm_answer,
@@ -141,10 +169,7 @@ def parse_excel(file_path: str, token: str = None) -> List[Dict[str, Any]]:
             'opt_c':       opts.get('C', ''),
             'opt_d':       opts.get('D', ''),
             'q_type':      q_type,
-        }
-        if token:
-            row_data['token'] = token
-        results.append(row_data)
+        })
 
     return results
 
