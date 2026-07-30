@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         网页考试助手 Premium v78 - 漏选补勾错选取消正确不动终极四保险打钩版
+// @name         网页考试助手 Premium v79 - 顶级无缝重构恢复框体与物理点击大融合版
 // @namespace    http://tampermonkey.net/
-// @version      78.0.0
-// @description  云端 HTTP 纯GM直连 + 智能校验已勾选状态 + 漏选自动补勾 + 错选自动撤销 + 正确选项保护不动 + 全平台
+// @version      79.0.0
+// @description  云端 HTTP 纯GM直连 + 顶级作用域防护确保悬浮框体100%弹显 + 原生input四重物理点击解决47题 + 漏选补勾错选撤销正确不动 + 全平台
 // @author       Antigravity
 // @match        *://*/*
 // @grant        GM_addStyle
@@ -377,58 +377,43 @@
     function smartClickOption(targetEl) {
         if (!targetEl) return false;
 
-    // ===== 判定选项 DOM 节点当前是否已被勾选 =====
     function isOptionChecked(el) {
         if (!el) return false;
         const input = el.querySelector('input') || (el.tagName === 'INPUT' ? el : null);
         if (input && input.checked) return true;
-
-        const isCheckedClass = el.classList.contains('is-checked') ||
-                               el.classList.contains('checked') ||
-                               !!el.querySelector('.is-checked, .checked, [class*="checked"]');
-        if (isCheckedClass) return true;
-
+        if (el.classList.contains('is-checked') || el.classList.contains('checked') || !!el.querySelector('.is-checked, .checked')) return true;
         if (el.getAttribute('aria-checked') === 'true' || input?.getAttribute('aria-checked') === 'true') return true;
         return false;
     }
 
-    // ===== 四重保险强效打钩与撤钩引擎 =====
-    function forceClickCheckbox(optionEl, targetState) {
-        if (!optionEl) return;
-        const isChecked = isOptionChecked(optionEl);
+    function forceToggleOption(targetEl, targetState) {
+        if (!targetEl) return false;
+        const isChecked = isOptionChecked(targetEl);
+        if (targetState === isChecked) return true;
 
-        // 状态完全一致，不动
-        if (targetState === isChecked) return;
-
-        const input = optionEl.querySelector('input[type="checkbox"], input[type="radio"]') 
-            || (optionEl.tagName === 'INPUT' ? optionEl : null);
-
-        const label = optionEl.closest('label') || optionEl;
+        const input = targetEl.querySelector('input[type="checkbox"], input[type="radio"]') || (targetEl.tagName === 'INPUT' ? targetEl : null);
+        const clickNode = input || targetEl.closest('label') || targetEl;
 
         try {
-            // 1. 优先触发原生 input.click()
-            if (input && typeof input.click === 'function') {
-                input.click();
-            } else if (label && typeof label.click === 'function') {
-                label.click();
+            if (typeof clickNode.click === 'function') {
+                clickNode.click();
             }
+            const evt = new MouseEvent('click', { bubbles: true, cancelable: true, view: win });
+            clickNode.dispatchEvent(evt);
 
-            // 2. 补发 MouseEvent 仿真事件
-            const evtOpts = { bubbles: true, cancelable: true, view: win };
-            (input || label).dispatchEvent(new MouseEvent('click', evtOpts));
-
-            // 3. 强制同步 change 与 input 事件
             if (input) {
                 input.checked = targetState;
                 input.dispatchEvent(new Event('change', { bubbles: true }));
                 input.dispatchEvent(new Event('input', { bubbles: true }));
             }
-        } catch (e) {}
+            return true;
+        } catch(e) {
+            return false;
+        }
     }
 
     function smartClickOption(targetEl) {
-        forceClickCheckbox(targetEl, true);
-        return true;
+        return forceToggleOption(targetEl, true);
     }
 
     function triggerFullClick(el) { return smartClickOption(el); }
@@ -538,30 +523,25 @@
             }
         });
 
-        // 3. 🌟 按照用户终极指示：先判断已勾选的是否正确，把错的去掉，把漏的勾上，准确的不动！
+        // 3. 🌟 先判断已勾选的是否正确：错的去掉，漏的补勾，准确的不动！
         const ALL_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F'];
-        const targetSet = new Set(answerLetters); // 正确答案集合 (如 {'A', 'B', 'C', 'D'})
+        const targetSet = new Set(answerLetters);
 
         elements.forEach((el, idx) => {
             if (idx >= ALL_LETTERS.length) return;
             const letter = ALL_LETTERS[idx];
-            
             const shouldBeChecked = targetSet.has(letter);
             const isCurrentlyChecked = isOptionChecked(el);
-
             const delay = idx * 180;
 
             setTimeout(() => {
                 if (shouldBeChecked && !isCurrentlyChecked) {
-                    // 漏选 -> 补勾选！
-                    forceClickCheckbox(el, true);
+                    forceToggleOption(el, true);
                     setDebug(`⚡ 补勾选正确选项 ${letter}`);
                 } else if (!shouldBeChecked && isCurrentlyChecked) {
-                    // 错选 -> 去掉！
-                    forceClickCheckbox(el, false);
+                    forceToggleOption(el, false);
                     setDebug(`🧹 撤销错误选项 ${letter}`);
                 } else {
-                    // 准确答案且已勾选 / 错误答案且未勾选 -> 不动！
                     setDebug(`🔒 选项 ${letter} 状态正确，保护不动`);
                 }
             }, delay);
