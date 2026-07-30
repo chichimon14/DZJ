@@ -587,8 +587,9 @@
             // 绝杀排除：考生姓名、关号、准考证、答题卡、已做未做等头部干扰文本
             if (/姓\s*名|关\s*号|准考证|考生|题卡|已做|未做|完成题数/i.test(text)) continue;
 
-            // 排除单纯的规则引导栏 ("29、 单选题：根据题干信息，在选项中，选择合适的答案。(1分)")
-            if (/^\d*[\s、.]*(单选题|多选题|判断题)[：:\s]*根据题干/i.test(text) && text.length < 45) continue;
+            // 排除纯规则引导栏 ("63、 判断题：判断下列说法是否正确。(1分)" / "根据题干信息，选择合适的答案")
+            if (/判断下列说法是否正确|根据题干信息|在选项中|选择合适的答案|至少选择\d+个/i.test(text) && text.length < 55) continue;
+            if (/^\d*[\s、.]*(单选题|多选题|判断题|填空题)[：:\s]*(判断下列|根据题干|选择|请选择)/i.test(text) && text.length < 55) continue;
 
             // 排除选项节点 (如 "A. 签发植物检疫证书")
             if (/^\s*[（(]?[A-Da-d][)）.、：:\s]/.test(text)) continue;
@@ -598,7 +599,8 @@
 
             // 提纯净化：剥离段落开头的无用引导说明
             text = text
-                .replace(/^\d*[\s、.]*(单选题|多选题|判断题)[：:\s]*/gi, '')
+                .replace(/^\d*[\s、.]*(单选题|多选题|判断题|填空题)[：:\s]*/gi, '')
+                .replace(/判断下列说法是否正确[。！!\s]*/gi, '')
                 .replace(/根据题干信息.*?选择.*?答案[。！!\s]*/gi, '')
                 .replace(/在选项中.*?选择[。！!\s]*/gi, '')
                 .replace(/[（(]\s*\d+\s*分[）)]/gi, '')
@@ -613,21 +615,32 @@
     }
 
     function autoCheckJudge(answerStr) {
-        const isCorrect = /^(CORRECT|TRUE|对|√|A|1)$/i.test((answerStr || '').toString().trim());
-        const trueKw  = ['正确', '对的', '√', '对', '是', 'true', 'a'];
-        const falseKw = ['错误', '错的', '×', '错', '否', 'false', 'b'];
-        const keywords = isCorrect ? trueKw : falseKw;
-
+        const isCorrect = /^(CORRECT|TRUE|对|正确|√|A|1)$/i.test((answerStr || '').toString().trim());
         const elements = findAllOptionElements();
+
+        // 目标索引：正确选 A (索引0)，错误选 B (索引1)
+        const targetIdx = isCorrect ? 0 : 1;
+        const targetKw  = isCorrect ? ['a', '对', '正确', '√'] : ['b', '错', '错误', '×'];
+
+        let hitEl = null;
         for (const el of elements) {
-            const text = el.textContent.trim().toLowerCase();
-            if (keywords.some(k => text.includes(k))) {
-                smartClickOption(el);
-                setDebug(`✅ 判断题已选: ${isCorrect ? '对 (A)' : '错 (B)'}`);
-                return;
+            const txt = el.textContent.trim().toLowerCase();
+            if (targetKw.some(k => txt.includes(k))) {
+                hitEl = el;
+                break;
             }
         }
-        setDebug(`⚠️ 判断题未匹配到选项: ${isCorrect ? '对' : '错'}`);
+
+        if (!hitEl && elements[targetIdx]) {
+            hitEl = elements[targetIdx];
+        }
+
+        if (hitEl) {
+            smartClickOption(hitEl);
+            setDebug(`✅ 判断题已选: ${isCorrect ? 'A. 正确/对' : 'B. 错误/错'}`);
+        } else {
+            setDebug(`⚠️ 判断题未定位到选项: ${isCorrect ? 'A. 对' : 'B. 错'}`);
+        }
     }
 
     // ===== 3 秒全自动切题与全局守护机制 =====
