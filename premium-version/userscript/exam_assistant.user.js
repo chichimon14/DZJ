@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         网页考试助手 Premium v72 - 全量修正数据库脏数据大获全胜版
+// @name         网页考试助手 Premium v73 - 右侧面板仅显正确选项与全勾选安全切题版
 // @namespace    http://tampermonkey.net/
-// @version      72.0.0
-// @description  云端 HTTP 纯GM直连 + 配合云端修补后的数据库精准秒回 A/B/C/D 正确答案 + 全平台
+// @version      73.0.0
+// @description  云端 HTTP 纯GM直连 + 右侧面板精简只显正确选项 + 多选全排队落地后安全切题 + 全平台
 // @author       Antigravity
 // @match        *://*/*
 // @grant        GM_addStyle
@@ -323,14 +323,6 @@
             setDebug(`🎯 匹配答案 [${data.answer}] (${data.score || 0}% 命中)`);
             setTimeout(() => {
                 autoCheck(data);
-                
-                // 3s 全自动切题联动
-                if (fullAutoEnabled) {
-                    clearTimeout(autoNextTimer);
-                    autoNextTimer = setTimeout(() => {
-                        switchToNextQuestion();
-                    }, 1600);
-                }
             }, 80);
         } else {
             setDebug(`😕 未找到匹配题目`);
@@ -362,18 +354,22 @@
             : (data.answer || '-');
 
         const opts = data.options || {};
-        const ansArr = (data.answer || '').split('');
-        const optsHtml = ['A', 'B', 'C', 'D'].filter(k => opts[k]).map(k =>
-            `<div class="ea-option${ansArr.includes(k) ? ' match' : ''}">
-               <span class="ea-option-letter">${k}.</span>
-               <span>${opts[k]}</span>
+        const ansArr = (data.answer || '').toUpperCase().split('');
+
+        // 🌟 按照用户规则：只过滤渲染包含在正确答案中的选项！
+        const matchedKeys = ['A', 'B', 'C', 'D', 'E', 'F'].filter(k => opts[k] && ansArr.includes(k));
+
+        const optsHtml = matchedKeys.map(k =>
+            `<div class="ea-option match" style="margin-top:4px">
+               <span class="ea-option-letter" style="color:#10b981;font-weight:bold">${k}.</span>
+               <span style="color:#e2e8f0">${opts[k]}</span>
              </div>`
         ).join('');
 
         box.innerHTML = `
             <div class="ea-answer-title">🎯 匹配答案（相似度 ${data.score || 0}%，来源: ${data.source === 'private' ? '私有库' : '公共库'}）</div>
-            <div class="ea-answer-text" style="font-size:16px;color:#10b981">${answerLetters}</div>
-            ${optsHtml ? `<div class="ea-options">${optsHtml}</div>` : ''}
+            <div class="ea-answer-text" style="font-size:18px;color:#10b981;font-weight:bold">${answerLetters}</div>
+            ${optsHtml ? `<div class="ea-options" style="margin-top:6px">${optsHtml}</div>` : ''}
         `;
     }
 
@@ -519,14 +515,25 @@
             }
         });
 
-        // 3. 多选题/单选题 90ms 延时队列依次排队触发点击，完美适配 Vue / ElementUI 状态响应
+        // 3. 多选题/单选题 180ms 延时队列依次排队触发点击，完美适配 Vue / ElementUI 状态响应
+        const ALL_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F'];
         queue.forEach((el, index) => {
+            const delay = index * 180;
             setTimeout(() => {
                 smartClickOption(el);
-            }, index * 90);
+            }, delay);
         });
 
-        setDebug(`✅ 已自动排队勾选答案 [${answerLetters.join('')}] (${queue.length} 个选项已触发)`);
+        setDebug(`✅ 已排队勾选答案 [${answerLetters.join('')}] (${queue.length} 个选项已触达)`);
+
+        // 🌟 关键修复：全自动切题必须在全部选项排队勾选完毕后 +2.2 秒才进行安全切题！
+        if (fullAutoEnabled) {
+            clearTimeout(autoNextTimer);
+            const totalWaitTime = (queue.length * 180) + 2200;
+            autoNextTimer = setTimeout(() => {
+                switchToNextQuestion();
+            }, totalWaitTime);
+        }
     }
 
     // 兼容旧代码引用
