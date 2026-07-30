@@ -268,6 +268,18 @@
 
     // ===== 处理搜题结果（带防错位丢弃机制）=====
     function handleSearchResult(data, reqQuery) {
+        if (!data) {
+            setDebug('❌ 返回数据为空');
+            return;
+        }
+
+        if (data.error) {
+            setDebug('❌ ' + data.error);
+            const box = document.getElementById('ea-answer-box');
+            if (box) box.innerHTML = `<div class="ea-miss">❌ ${data.error}</div>`;
+            return;
+        }
+
         // 如果当前页面的题干已经切换，丢弃过期的旧搜题响应
         const currentTitleEl = findQuestionTitle();
         if (currentTitleEl) {
@@ -288,14 +300,20 @@
     function renderAnswer(data) {
         const box = document.getElementById('ea-answer-box');
         if (!box) return;
+
+        if (data.error) {
+            box.innerHTML = `<div class="ea-miss">❌ ${data.error}</div>`;
+            return;
+        }
+
         if (!data.found) {
-            box.innerHTML = `<div class="ea-miss">😕 未找到匹配题目，请尝试手动搜索</div>`;
+            box.innerHTML = `<div class="ea-miss">😕 ${data.msg || '未找到匹配题目'}</div>`;
             return;
         }
 
         const answerLetters = data.q_type === 'judge'
             ? (data.answer === 'correct' ? '✅ 正确' : '❌ 错误')
-            : data.answer;
+            : (data.answer || '-');
 
         const opts = data.options || {};
         const ansArr = (data.answer || '').split('');
