@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         网页考试助手 Premium v57 - GM与Native双保险直连搜题版
+// @name         网页考试助手 Premium v58 - 精准题干提纯与强效勾选重构版
 // @namespace    http://tampermonkey.net/
-// @version      57.0.0
-// @description  云端 WSS/HTTP 极速搜题 + Token 一键激活 + 私有题库拖拽上传 + 双保险无缝连接 + 全平台
+// @version      58.0.0
+// @description  云端 WSS/HTTP 极速搜题 + Token 一键激活 + 智能剔除引导说明 + 强效选项勾选 + 全平台
 // @author       Antigravity
 // @match        *://*/*
 // @grant        GM_addStyle
@@ -503,73 +503,42 @@
             .trim();
     }
 
-    function findQuestionTitle() {
-        // 1. Class / ID 选择器匹配
-        const selectors = [
-            '.question-title', '.q-title', '.stem', '.exam-title',
-            '[class*="questionStem"]', '[class*="question_title"]',
-            '[class*="ques-title"]', '[class*="title"][class*="ques"]',
-            '[class*="stem"]', '[class*="question-content"]',
-            '.exam-question-title', '.q_tit', '.ques_tit',
-            '.question-body', '.question-detail', '.question-head',
-            'h3', 'h4', 'h5'
-        ];
-        for (const sel of selectors) {
-            const els = document.querySelectorAll(sel);
-            for (const el of els) {
-                if (el.closest('#exam-assistant-container')) continue;
-                const text = el.textContent.trim();
-                if (el.offsetParent !== null && text.length > 5 && text.length < 1000) {
-                    return el;
-                }
-            }
-        }
+    function findQuestionTitleText() {
+        const allNodes = Array.from(document.querySelectorAll('body div, body p, body span, body td, body section, body h1, body h2, body h3, body h4'));
 
-        // 2. 智能特征文本检测（遍历页面节点）
-        const candidates = Array.from(document.querySelectorAll('body div, body p, body span, body td, body section, body h1, body h2, body h3, body h4'));
-        for (const el of candidates) {
+        for (const el of allNodes) {
             if (el.closest('#exam-assistant-container')) continue;
             if (el.offsetParent === null) continue;
-            if (el.children.length > 4) continue;
+            if (el.children.length > 3) continue;
 
-            const text = el.textContent.trim();
-            if (text.length < 6 || text.length > 800) continue;
+            let text = el.textContent.trim();
+            if (text.length < 4 || text.length > 800) continue;
 
-            // 排除选项节点 (A. 保护区)
+            // 剔除说明性节点 (如 "28、单选题：根据题干信息，在选项中，选择合适的答案。(1分)")
+            if (/^\d*[\s、.]*(单选题|多选题|判断题)[：:\s]*根据题干/i.test(text) && text.length < 45) {
+                continue;
+            }
+
+            // 剔除选项节点
             if (/^\s*[（(]?[A-Da-d][)）.、：:\s]/.test(text)) continue;
 
-            if (
-                /^\d+[.、．\s]+/.test(text) ||
-                /[（(]\s*[）)]/.test(text) ||
-                /(单选题|多选题|判断题|填空题)/.test(text) ||
-                /是指|下列|属于|关于|包括|正确的|错误的|依据|方式|原因|结果|要求|标准/.test(text)
-            ) {
-                return el;
+            // 剔除按钮与提示
+            if (/^(上一题|下一题|提交|答题卡|交卷|搜索|搜题|单选题|多选题|判断题)$/.test(text)) continue;
+
+            // 净化过滤掉顶部的引导性字词
+            text = text
+                .replace(/^\d*[\s、.]*(单选题|多选题|判断题)[：:\s]*/gi, '')
+                .replace(/根据题干信息.*?选择.*?答案[。！!\s]*/gi, '')
+                .replace(/在选项中.*?选择[。！!\s]*/gi, '')
+                .replace(/[（(]\s*\d+\s*分[）)]/gi, '')
+                .replace(/^\d+[\s、.．]+/, '')
+                .trim();
+
+            if (text.length >= 4) {
+                return text;
             }
         }
-
-        // 3. 上下文逆向推导：找到选项节点，往上追溯前置题干元素
-        const options = findAllOptionElements();
-        if (options.length > 0) {
-            const firstOpt = options[0];
-            let curr = firstOpt;
-            while (curr) {
-                let prev = curr.previousElementSibling;
-                while (prev) {
-                    if (!prev.closest('#exam-assistant-container') && prev.offsetParent !== null) {
-                        const txt = prev.textContent.trim();
-                        if (txt.length >= 6 && txt.length <= 800 && !/^\s*[（(]?[A-Da-d][)）.、：:\s]/.test(txt)) {
-                            return prev;
-                        }
-                    }
-                    prev = prev.previousElementSibling;
-                }
-                curr = curr.parentElement;
-                if (curr === document.body) break;
-            }
-        }
-
-        return null;
+        return '';
     }
 
     function autoCheckJudge(answer) {
@@ -633,15 +602,14 @@
     }
 
     function autoProcessCurrentQuestion() {
-        const titleEl = findQuestionTitle();
-        if (!titleEl) return;
-        const title = titleEl.textContent.trim();
-        if (!title || title.length < 4) return;
+        const titleText = findQuestionTitleText();
+        if (!titleText || titleText.length < 4) return;
 
-        const hash = titleHash(title);
+        const hash = titleHash(titleText);
         if (hash === currentTitleHash) return;
+
         currentTitleHash = hash;
-        searchQuestion(title);
+        searchQuestion(titleText);
     }
 
     // 400ms 全局轮询搜题守护：持续监控 DOM 自动识别新题干并极速搜题
