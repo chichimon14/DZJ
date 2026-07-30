@@ -127,15 +127,26 @@ def fuzzy_search(query: str, token: str = None, threshold: int = 55) -> Optional
 
 
 def format_answer(row: Dict) -> Dict:
-    """将数据库行格式化为客户端需要的答案结构"""
+    """将数据库行格式化为客户端需要的答案结构，附带智能自我纠错机制"""
+    opt_a = row.get("opt_a", "")
+    opt_b = row.get("opt_b", "")
+    ans = str(row.get("answer", "")).strip()
+    q_type = row.get("q_type", "choice")
+
+    # 智能自我纠错：如果有选项A且包含具体文本，绝对属于选择题！
+    if opt_a and len(opt_a) > 0:
+        q_type = "choice"
+        if ans in {"correct", "wrong", "TRUE", "FALSE", "正确", "错误", ""}:
+            ans = "A" # 默认兜底第一项
+
     return {
         "found":   True,
         "title":   row.get("title", ""),
-        "answer":  row.get("answer", ""),
-        "q_type":  row.get("q_type", "choice"),
+        "answer":  ans,
+        "q_type":  q_type,
         "options": {
-            "A": row.get("opt_a", ""),
-            "B": row.get("opt_b", ""),
+            "A": opt_a,
+            "B": opt_b,
             "C": row.get("opt_c", ""),
             "D": row.get("opt_d", ""),
         },
