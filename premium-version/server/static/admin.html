@@ -537,15 +537,17 @@ async function doUploadBank(file){
   try{
     const r = await fetch('/api/bank/upload',{method:'POST',body:fd});
     const data = await r.json();
-    if(data.success){
+    if(r.ok && data.success){
       result.innerHTML = `<span style="color:var(--green)">✅ 成功导入 <strong>${data.imported}</strong> 道题目</span>`;
       toast('✅ 题库导入成功：'+data.imported+' 题','success');
       loadBankInfo();
     }else{
-      result.innerHTML = `<span style="color:var(--red)">❌ 导入失败</span>`;
+      const errDetail = data.detail || data.msg || '格式错误或包含无法识别的字符';
+      result.innerHTML = `<span style="color:var(--red)">❌ 导入失败: ${errDetail}</span>`;
+      toast('❌ 导入失败: '+errDetail, 'error');
     }
   }catch(e){
-    result.innerHTML = `<span style="color:var(--red)">❌ 网络错误</span>`;
+    result.innerHTML = `<span style="color:var(--red)">❌ 请求失败: ${e.message}</span>`;
   }
 }
 

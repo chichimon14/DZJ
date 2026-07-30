@@ -265,8 +265,8 @@ async def token_info(token: str = Query(...), device_id: str = Query(...)):
 @app.post("/api/bank/upload")
 async def upload_bank(
     file: UploadFile = File(...),
-    token: str = Form(...),
-    device_id: str = Form(...),
+    token: str = Form(""),
+    device_id: str = Form(""),
     target: str = Form("private"),  # private | public (public 需要管理员权限)
     admin_key: str = Form(""),
 ):

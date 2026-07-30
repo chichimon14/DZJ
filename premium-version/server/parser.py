@@ -174,24 +174,36 @@ def parse_excel(file_path: str, token: str = None) -> List[Dict[str, Any]]:
     return results
 
 
-def import_to_db(conn, rows: List[Dict[str, Any]], is_private: bool = False, source: str = 'upload'):
-    """将解析结果批量写入数据库"""
-    table = 'private_bank' if is_private else 'public_bank'
-    inserted = 0
-    for row in rows:
-        try:
-            if is_private:
-                conn.execute("""
-                    INSERT INTO private_bank (token, title, title_clean, answer, opt_a, opt_b, opt_c, opt_d, q_type)
-                    VALUES (:token, :title, :title_clean, :answer, :opt_a, :opt_b, :opt_c, :opt_d, :q_type)
-                """, row)
-            else:
-                conn.execute("""
-                    INSERT INTO public_bank (title, title_clean, answer, opt_a, opt_b, opt_c, opt_d, q_type, source)
-                    VALUES (:title, :title_clean, :answer, :opt_a, :opt_b, :opt_c, :opt_d, :q_type, :source)
-                """, {**row, 'source': source})
-            inserted += 1
-        except Exception as e:
-            print(f"[跳过] 插入失败: {e} | 题干: {row.get('title', '')[:30]}")
-    conn.commit()
-    return inserted
+def import_to_db(conn, rows: List[Dict[str, Any]], is_private: bool = False, source: str = 'upload') -> int:
+    """将解析结果批量写入数据库（使用 executemany 极速事务处理）"""
+    if not rows:
+        return 0
+
+    if is_private:
+        sql = """
+            INSERT INTO private_bank (token, title, title_clean, answer, opt_a, opt_b, opt_c, opt_d, q_type)
+            VALUES (:token, :title, :title_clean, :answer, :opt_a, :opt_b, :opt_c, :opt_d, :q_type)
+        """
+        data = rows
+    else:
+        sql = """
+            INSERT INTO public_bank (title, title_clean, answer, opt_a, opt_b, opt_c, opt_d, q_type, source)
+            VALUES (:title, :title_clean, :answer, :opt_a, :opt_b, :opt_c, :opt_d, :q_type, :source)
+        """
+        data = [{**r, 'source': source} for r in rows]
+
+    try:
+        conn.executemany(sql, data)
+        conn.commit()
+        return len(data)
+    except Exception as e:
+        print(f"[错误] 批量插入失败，降级逐条插入: {e}")
+        inserted = 0
+        for r in data:
+            try:
+                conn.execute(sql, r)
+                inserted += 1
+            except Exception:
+                pass
+        conn.commit()
+        return inserted
