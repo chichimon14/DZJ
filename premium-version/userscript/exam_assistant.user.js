@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         网页考试助手 Premium v75 - 状态先判定只补全未勾选防破坏终极版
+// @name         网页考试助手 Premium v76 - 修复闭包语法匹配恢复框体正常显示版
 // @namespace    http://tampermonkey.net/
-// @version      75.0.0
-// @description  云端 HTTP 纯GM直连 + 智能先判定选框勾选状态 + 仅精准补全未勾选项 + 防点回已做题目重点击打乱 + 全平台
+// @version      76.0.0
+// @description  云端 HTTP 纯GM直连 + 修复最外层 IIFE 闭合语法 + 框体恢复正常弹显 + 智能补全未勾选项 + 全平台
 // @author       Antigravity
 // @match        *://*/*
 // @grant        GM_addStyle
@@ -1102,4 +1102,5 @@
         setTimeout(init, 800);
     }
 
+}
 })();
