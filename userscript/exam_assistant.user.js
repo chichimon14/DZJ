@@ -1,592 +1,838 @@
 // ==UserScript==
-// @name         网页考试助手 v51 - 剥离○图标前缀精准勾选 + 单次点击防双跳
+// @name         网页考试助手 Premium v102 - 极速全环境兼容高容错版
 // @namespace    http://tampermonkey.net/
-// @version      51.0.0
-// @description  剥离选项前导○图标/全角句号后再匹配，彻底解决未找到选项A的问题
+// @version      102.0.0
+// @description  同题干多版本消歧/最新更正优先/全环境容错防护/无外链依赖/屏幕中心Y轴几何锁定
 // @author       Antigravity
 // @match        *://*/*
 // @grant        GM_addStyle
 // @grant        GM_xmlhttpRequest
+// @grant        GM_setValue
+// @grant        GM_getValue
 // @grant        unsafeWindow
-// @connect      127.0.0.1
-// @connect      localhost
+// @connect      175.178.78.88
+// @connect      *
 // @run-at       document-end
 // ==/UserScript==
 
 (function () {
     'use strict';
-
     const win = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
-    // ===== 全局状态 =====
-    let socket = null;
-    let activeType = null;
-    let isConnected = false;
-    let isCollapsed = false;
-    let autoCheckEnabled = true;
-    let fullAutoEnabled = false;
-    let lastSwitchTimestamp = 0;
-    let isSwitchingQuestion = false;
-    let lastSelectedText = '';
-    let currentTitleHash = '';
-    let selectionTimer = null;
-    let container = null;
-    let fallbackMode = false;
-    let lastAutoProcessTime = 0;
+    function safeGMGetValue(key, defVal) {
+        try {
+            if (typeof GM_getValue !== 'undefined') {
+                const val = GM_getValue(key);
+                if (val !== undefined && val !== null) return val;
+            }
+            if (typeof localStorage !== 'undefined') {
+                const lval = localStorage.getItem('ea_' + key);
+                if (lval !== null) return lval;
+            }
+        } catch(e) {}
+        return defVal;
+    }
 
-    // ===== CSS =====
+    function safeGMSetValue(key, val) {
+        try {
+            if (typeof GM_setValue !== 'undefined') { GM_setValue(key, val); return; }
+            if (typeof localStorage !== 'undefined') { localStorage.setItem('ea_' + key, String(val)); }
+        } catch(e) {}
+    }
+
+    const CLOUD_DOMAIN   = safeGMGetValue('cloud_domain', '175.178.78.88');
+    const HTTP_URL       = `http://${CLOUD_DOMAIN}/api/search`;
+    const TOKEN_INFO_URL = `http://${CLOUD_DOMAIN}/api/token/info`;
+
+    let USER_TOKEN = safeGMGetValue('user_token', 'TEST-VIP-2026-8888');
+    let DEVICE_ID  = safeGMGetValue('device_id', '');
+    if (!DEVICE_ID) {
+        const fp = [navigator.userAgent.length,screen.width,screen.height,screen.colorDepth,navigator.language,new Date().getTimezoneOffset(),navigator.hardwareConcurrency||4,Math.random().toString(36).slice(2,10)].join('-');
+        DEVICE_ID = btoa(fp).replace(/[^A-Za-z0-9]/g,'').slice(0,32);
+        safeGMSetValue('device_id', DEVICE_ID);
+    }
+
+    let socket=null,activeType=null,isConnected=false,isCollapsed=false;
+    let autoCheckEnabled=safeGMGetValue('autoCheckEnabled',true);
+    if (typeof autoCheckEnabled === 'string') autoCheckEnabled = (autoCheckEnabled === 'true');
+
+    let fullAutoEnabled=false,lastSwitchTimestamp=0,isSwitchingQuestion=false;
+    let lastSelectedText='',currentTitleHash='',selectionTimer=null;
+    let container=null,fallbackMode=false,lastAutoProcessTime=0;
+    let inputQ,searchBtn,resultsList,toggleBtn,bodyEl,statusDot,debugBar;
+    let autoCheckToggle, fullAutoToggle;
+
+    // ===== 🎨 极致高端 CSS (系统级高质字体，无外链依赖) =====
     const cssText = `
-    #exam-assistant-container {
-        position: fixed !important; width: 340px !important; max-height: 580px !important;
-        z-index: 2147483647 !important; background: #121826 !important;
-        border: 2px solid #3b82f6 !important; border-radius: 12px !important;
-        box-shadow: 0 10px 30px rgba(0,0,0,.8), 0 0 20px rgba(59,130,246,.5) !important;
-        color: #f3f4f6 !important;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
-        font-size: 13px !important; overflow: hidden !important;
-        user-select: none !important; display: block !important;
-        visibility: visible !important; opacity: 1 !important;
+    #ea-root {
+        position: fixed !important;
+        width: 330px !important;
+        top: 18px !important; right: 18px !important;
+        z-index: 2147483647 !important;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
+        font-size: 13px !important;
+        display: block !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        user-select: none !important;
     }
-    #exam-assistant-header {
-        padding: 10px 14px;
-        background: linear-gradient(135deg, #2563eb, #7c3aed) !important;
-        border-bottom: 1px solid rgba(255,255,255,.2);
-        display: flex; align-items: center; justify-content: space-between;
-        cursor: move !important; touch-action: none !important;
+    #ea-panel {
+        background: rgba(8, 11, 20, 0.97) !important;
+        border: 1px solid rgba(99, 102, 241, 0.35) !important;
+        border-radius: 16px !important;
+        overflow: hidden !important;
+        box-shadow:
+            0 0 0 1px rgba(99,102,241,0.1),
+            0 20px 60px rgba(0,0,0,0.8),
+            0 0 40px rgba(99,102,241,0.12),
+            inset 0 1px 0 rgba(255,255,255,0.06) !important;
+        backdrop-filter: blur(20px) !important;
+        -webkit-backdrop-filter: blur(20px) !important;
     }
-    .ea-title-box { display:flex; align-items:center; gap:8px; font-weight:600; color:#fff; pointer-events:none; }
-    .ea-status-dot { width:10px; height:10px; border-radius:50%; background-color:#ef4444; box-shadow:0 0 8px #ef4444; transition:all .3s; }
-    .ea-status-dot.online { background-color:#10b981; box-shadow:0 0 8px #10b981; }
-    .ea-btn-icon { background:rgba(255,255,255,.2); border:none; color:#fff; border-radius:4px; width:24px; height:24px; cursor:pointer; font-size:12px; font-weight:bold; display:flex; align-items:center; justify-content:center; }
-    .ea-btn-icon:hover { background:rgba(255,255,255,.4); }
-    #exam-assistant-body { padding:12px; display:flex; flex-direction:column; gap:10px; max-height:520px; overflow-y:auto; background:#121826; }
-    .ea-control-bar { display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,.05); padding:6px 10px; border-radius:6px; font-size:11px; }
-    .ea-switch-label { display:flex; align-items:center; gap:4px; cursor:pointer; color:#fbbf24; font-size:11px; }
-    .ea-full-auto-label { display:flex; align-items:center; gap:4px; cursor:pointer; color:#60a5fa; font-weight:600; font-size:11px; }
-    .ea-debug-bar { background:rgba(96,165,250,.1); border:1px solid rgba(96,165,250,.3); border-radius:5px; padding:4px 8px; font-size:10px; color:#93c5fd; min-height:18px; word-break:break-all; }
-    .ea-search-bar { display:flex; gap:6px; }
-    .ea-input { flex:1; background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.3); border-radius:6px; padding:6px 10px; color:#fff; font-size:12px; outline:none; }
-    .ea-search-btn { background:#3b82f6; border:none; color:#fff; padding:6px 12px; border-radius:6px; font-weight:600; cursor:pointer; }
-    .ea-search-btn:hover { background:#2563eb; }
-    .ea-exact-card { background:rgba(16,185,129,.2); border:1px solid rgba(16,185,129,.5); border-radius:8px; padding:12px; display:flex; flex-direction:column; gap:8px; user-select:text; }
-    .ea-notfound-card { background:rgba(239,68,68,.2); border:1px solid rgba(239,68,68,.5); border-radius:8px; padding:12px; color:#fca5a5; line-height:1.5; font-size:12px; }
-    .ea-exact-ans-box { background:#10b981; color:#064e3b; padding:10px 12px; border-radius:6px; font-size:15px; font-weight:700; display:flex; justify-content:space-between; align-items:center; word-break:break-all; box-shadow:0 4px 12px rgba(16,185,129,.4); }
-    .ea-copy-btn-bright { background:#047857; border:none; color:#fff; cursor:pointer; font-size:12px; padding:4px 8px; border-radius:4px; font-weight:600; }
-    .ea-copy-btn-bright:hover { background:#065f46; }
-    .ea-auth-link { color:#60a5fa; text-decoration:underline; cursor:pointer; font-weight:bold; }
-    `;
-    if (typeof GM_addStyle !== 'undefined') { GM_addStyle(cssText); }
-    else { const s = document.createElement('style'); s.textContent = cssText; (document.head || document.documentElement).appendChild(s); }
 
-    let inputQ, searchBtn, resultsList, toggleBtn, bodyEl, statusDot, autoCheckCb, fullAutoCb, debugBar;
+    /* Header */
+    #ea-header {
+        padding: 12px 14px 11px !important;
+        background: linear-gradient(135deg, rgba(30,27,75,0.95) 0%, rgba(49,46,129,0.9) 50%, rgba(67,56,202,0.85) 100%) !important;
+        border-bottom: 1px solid rgba(99,102,241,0.2) !important;
+        display: flex !important; align-items: center !important; justify-content: space-between !important;
+        cursor: move !important;
+    }
+    #ea-header-left { display:flex; align-items:center; gap:8px; pointer-events:none; }
+    #ea-status-wrap { position:relative; width:10px; height:10px; flex-shrink:0; }
+    #ea-status-dot {
+        width:10px; height:10px; border-radius:50%;
+        background:#475569; transition: background .4s, box-shadow .4s;
+    }
+    #ea-status-dot.online {
+        background: #10b981 !important;
+        box-shadow: 0 0 0 3px rgba(16,185,129,0.25), 0 0 10px rgba(16,185,129,0.6) !important;
+        animation: ea-pulse 2s infinite !important;
+    }
+    @keyframes ea-pulse {
+        0%,100% { box-shadow: 0 0 0 3px rgba(16,185,129,0.25), 0 0 10px rgba(16,185,129,0.5); }
+        50% { box-shadow: 0 0 0 5px rgba(16,185,129,0.15), 0 0 18px rgba(16,185,129,0.7); }
+    }
+    #ea-title {
+        font-size: 12.5px !important; font-weight: 600 !important;
+        color: rgba(255,255,255,0.92) !important; letter-spacing: 0.3px !important;
+    }
+    #ea-version-tag {
+        font-size: 9px !important; font-weight: 500 !important;
+        background: rgba(99,102,241,0.4) !important;
+        color: #a5b4fc !important; padding: 1px 6px !important;
+        border-radius: 20px !important; border: 1px solid rgba(99,102,241,0.3) !important;
+        letter-spacing: 0.5px !important;
+    }
+    #ea-collapse-btn {
+        width: 24px !important; height: 24px !important;
+        background: rgba(255,255,255,0.08) !important;
+        border: 1px solid rgba(255,255,255,0.12) !important;
+        border-radius: 6px !important; color: rgba(255,255,255,0.7) !important;
+        cursor: pointer !important; font-size: 11px !important;
+        display: flex !important; align-items: center !important; justify-content: center !important;
+        transition: all .2s !important; flex-shrink:0;
+    }
+    #ea-collapse-btn:hover { background:rgba(255,255,255,0.15) !important; color:#fff !important; }
+
+    /* Body */
+    #ea-body {
+        padding: 12px !important;
+        display: flex !important; flex-direction: column !important; gap: 10px !important;
+        max-height: 520px !important; overflow-y: auto !important;
+        background: transparent !important;
+    }
+    #ea-body::-webkit-scrollbar { width: 3px; }
+    #ea-body::-webkit-scrollbar-track { background: transparent; }
+    #ea-body::-webkit-scrollbar-thumb { background: rgba(99,102,241,0.3); border-radius: 2px; }
+
+    /* 拨片式 Toggle 开关区域 */
+    #ea-toggles {
+        display: flex !important; gap: 8px !important;
+    }
+    .ea-toggle-item {
+        flex: 1 !important;
+        display: flex !important; align-items: center !important; justify-content: space-between !important;
+        padding: 7px 10px !important;
+        background: rgba(255,255,255,0.03) !important;
+        border: 1px solid rgba(255,255,255,0.07) !important;
+        border-radius: 10px !important;
+        cursor: pointer !important; transition: all .2s !important;
+    }
+    .ea-toggle-item:hover { background:rgba(255,255,255,0.06) !important; border-color:rgba(99,102,241,0.25) !important; }
+    .ea-toggle-label {
+        font-size: 10.5px !important; font-weight: 500 !important;
+        color: rgba(255,255,255,0.55) !important; line-height:1 !important;
+        pointer-events:none;
+    }
+    /* 真实拨片开关 */
+    .ea-switch {
+        position: relative !important; width: 30px !important; height: 16px !important;
+        flex-shrink: 0 !important; pointer-events: none !important;
+    }
+    .ea-switch input { display:none !important; }
+    .ea-switch-track {
+        position: absolute !important; inset: 0 !important; border-radius: 20px !important;
+        background: rgba(255,255,255,0.12) !important;
+        transition: all .25s !important;
+        border: 1px solid rgba(255,255,255,0.1) !important;
+    }
+    .ea-switch-thumb {
+        position: absolute !important; width: 12px !important; height: 12px !important;
+        background: rgba(255,255,255,0.5) !important;
+        border-radius: 50% !important; top: 1px !important; left: 1px !important;
+        transition: all .25s cubic-bezier(.34,1.56,.64,1) !important;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.3) !important;
+    }
+    .ea-toggle-item.on .ea-switch-track {
+        background: linear-gradient(135deg, #4f46e5, #6366f1) !important;
+        border-color: rgba(99,102,241,0.5) !important;
+        box-shadow: 0 0 8px rgba(99,102,241,0.4) !important;
+    }
+    .ea-toggle-item.on .ea-switch-thumb {
+        left: 15px !important; background: #fff !important;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.4) !important;
+    }
+    .ea-toggle-item.on .ea-toggle-label { color: rgba(165,180,252,0.9) !important; }
+
+    /* Debug 状态栏 */
+    #ea-debug {
+        font-size: 10px !important; font-weight: 400 !important;
+        color: rgba(148,163,184,0.7) !important;
+        padding: 5px 8px !important;
+        background: rgba(255,255,255,0.025) !important;
+        border: 1px solid rgba(255,255,255,0.05) !important;
+        border-radius: 8px !important;
+        min-height: 16px !important; word-break: break-all !important;
+        letter-spacing: 0.2px !important;
+    }
+
+    /* 搜索栏 */
+    #ea-search-row {
+        display: flex !important; gap: 7px !important; align-items: stretch !important;
+    }
+    #ea-input {
+        flex: 1 !important;
+        background: rgba(255,255,255,0.05) !important;
+        border: 1px solid rgba(255,255,255,0.1) !important;
+        border-radius: 9px !important; padding: 7px 11px !important;
+        color: rgba(255,255,255,0.9) !important; font-size: 12px !important;
+        outline: none !important; transition: all .2s !important;
+        font-family: inherit !important;
+    }
+    #ea-input::placeholder { color: rgba(255,255,255,0.25) !important; }
+    #ea-input:focus {
+        border-color: rgba(99,102,241,0.5) !important;
+        background: rgba(99,102,241,0.06) !important;
+        box-shadow: 0 0 0 3px rgba(99,102,241,0.1) !important;
+    }
+    #ea-search-btn {
+        background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%) !important;
+        border: none !important; color: #fff !important;
+        padding: 0 13px !important; border-radius: 9px !important;
+        font-weight: 600 !important; font-size: 12px !important;
+        cursor: pointer !important; transition: all .2s !important;
+        font-family: inherit !important; white-space: nowrap !important;
+        box-shadow: 0 2px 8px rgba(99,102,241,0.3) !important;
+    }
+    #ea-search-btn:hover { opacity: .88 !important; transform: translateY(-1px) !important; box-shadow: 0 4px 12px rgba(99,102,241,0.4) !important; }
+    #ea-search-btn:active { transform: translateY(0) !important; }
+
+    /* 结果卡片：匹配成功 */
+    .ea-result-card {
+        border-radius: 11px !important; overflow: hidden !important;
+        border: 1px solid rgba(16,185,129,0.3) !important;
+        background: rgba(16,185,129,0.06) !important;
+        user-select: text !important;
+    }
+    .ea-result-card-header {
+        padding: 7px 12px !important;
+        display: flex !important; align-items: center !important; justify-content: space-between !important;
+        background: rgba(16,185,129,0.1) !important;
+        border-bottom: 1px solid rgba(16,185,129,0.15) !important;
+    }
+    .ea-match-label { font-size: 10px !important; font-weight: 600 !important; color: #34d399 !important; letter-spacing:0.3px; }
+    .ea-auto-label { font-size: 10px !important; color: rgba(96,165,250,0.8) !important; font-weight:500; }
+
+    .ea-question-text {
+        padding: 8px 12px !important;
+        font-size: 11.5px !important; color: rgba(226,232,240,0.75) !important;
+        line-height: 1.5 !important; border-bottom: 1px solid rgba(255,255,255,0.05) !important;
+    }
+
+    /* 答案大卡 */
+    .ea-answer-block {
+        padding: 10px 12px !important;
+        display: flex !important; align-items: center !important; justify-content: space-between !important;
+    }
+    .ea-answer-letter {
+        font-size: 26px !important; font-weight: 700 !important;
+        background: linear-gradient(135deg, #10b981, #34d399) !important;
+        -webkit-background-clip: text !important;
+        -webkit-text-fill-color: transparent !important;
+        background-clip: text !important;
+        line-height: 1 !important; letter-spacing: -0.5px !important;
+        filter: drop-shadow(0 0 8px rgba(16,185,129,0.5)) !important;
+    }
+    .ea-answer-right { display:flex; flex-direction:column; align-items:flex-end; gap:4px; }
+    .ea-answer-full {
+        font-size: 11px !important; font-weight: 500 !important;
+        color: rgba(255,255,255,0.7) !important; text-align:right; max-width:200px; line-height:1.4;
+    }
+    .ea-copy-btn {
+        background: rgba(16,185,129,0.15) !important;
+        border: 1px solid rgba(16,185,129,0.3) !important;
+        color: #34d399 !important; padding: 3px 9px !important;
+        border-radius: 6px !important; font-size: 10px !important; font-weight: 600 !important;
+        cursor: pointer !important; transition: all .2s !important; font-family:inherit;
+    }
+    .ea-copy-btn:hover { background:rgba(16,185,129,0.25) !important; }
+
+    /* 选项详情 */
+    .ea-options-list { padding: 0 12px 10px !important; display:flex; flex-direction:column; gap:4px; }
+    .ea-opt-row {
+        display: flex !important; gap: 7px !important; align-items: flex-start !important;
+        padding: 4px 8px !important; border-radius: 6px !important;
+        background: rgba(255,255,255,0.03) !important;
+        border-left: 2px solid rgba(255,255,255,0.1) !important;
+        transition: all .15s !important;
+    }
+    .ea-opt-row.correct {
+        background: rgba(16,185,129,0.1) !important;
+        border-left: 2px solid #10b981 !important;
+        box-shadow: inset 0 0 12px rgba(16,185,129,0.06) !important;
+    }
+    .ea-opt-letter { color: rgba(148,163,184,0.6) !important; font-weight: 600 !important; font-size: 11px !important; min-width:14px; flex-shrink:0; margin-top:1px; }
+    .ea-opt-row.correct .ea-opt-letter { color: #10b981 !important; }
+    .ea-opt-text { color: rgba(203,213,225,0.65) !important; font-size: 11px !important; line-height: 1.45 !important; }
+    .ea-opt-row.correct .ea-opt-text { color: rgba(226,240,233,0.9) !important; font-weight:500 !important; }
+    .ea-opt-check { margin-left:auto; color:#10b981; font-size:11px; flex-shrink:0; }
+
+    /* 警告卡片：选项不匹配 */
+    .ea-warn-card {
+        border-radius: 11px !important; overflow: hidden !important;
+        border: 1px solid rgba(245,158,11,0.35) !important;
+        background: rgba(245,158,11,0.06) !important;
+        user-select: text !important;
+    }
+    .ea-warn-header {
+        padding: 7px 12px !important;
+        background: rgba(245,158,11,0.1) !important;
+        border-bottom: 1px solid rgba(245,158,11,0.15) !important;
+        font-size: 10px !important; font-weight: 600 !important; color: #fbbf24 !important;
+    }
+    .ea-warn-body { padding: 8px 12px !important; font-size: 11px !important; color: rgba(253,230,138,0.75) !important; line-height: 1.5 !important; }
+
+    /* 未找到卡片 */
+    .ea-notfound-card {
+        border-radius: 11px !important;
+        border: 1px solid rgba(239,68,68,0.25) !important;
+        background: rgba(239,68,68,0.06) !important;
+        padding: 10px 12px !important;
+        font-size: 11px !important; color: rgba(252,165,165,0.8) !important; line-height:1.5;
+    }
+
+    /* 徽章 */
+    .ea-badge-remap {
+        display:inline-block; font-size:9px; font-weight:600; padding:1px 5px;
+        background:rgba(139,92,246,0.3); color:#c4b5fd;
+        border:1px solid rgba(139,92,246,0.4); border-radius:4px; margin-left:4px; vertical-align:middle;
+    }
+    .ea-badge-mismatch {
+        display:inline-block; font-size:9px; font-weight:600; padding:1px 5px;
+        background:rgba(239,68,68,0.25); color:#fca5a5;
+        border:1px solid rgba(239,68,68,0.35); border-radius:4px; margin-left:4px; vertical-align:middle;
+    }
+    `;
+
+    try {
+        if (typeof GM_addStyle !== 'undefined') GM_addStyle(cssText);
+        else { const s=document.createElement('style'); s.textContent=cssText; (document.head||document.documentElement).appendChild(s); }
+    } catch(e) {}
 
     // ===== 创建浮窗 =====
     function createFloatingUI() {
-        if (document.getElementById('exam-assistant-container')) return;
+        if (document.getElementById('ea-root')) return;
         container = document.createElement('div');
-        container.id = 'exam-assistant-container';
-        container.style.cssText = 'top:20px;right:20px;';
+        container.id = 'ea-root';
         container.innerHTML = `
-            <div id="exam-assistant-header">
-                <div class="ea-title-box">
-                    <span class="ea-status-dot" id="ea-status"></span>
-                    <span>考试助手 v49</span>
+        <div id="ea-panel">
+            <div id="ea-header">
+                <div id="ea-header-left">
+                    <div id="ea-status-wrap"><div id="ea-status-dot"></div></div>
+                    <span id="ea-title">🎯 考试助手</span>
+                    <span id="ea-version-tag">v102</span>
                 </div>
-                <button class="ea-btn-icon" id="ea-toggle-btn">─</button>
+                <button id="ea-collapse-btn">─</button>
             </div>
-            <div id="exam-assistant-body">
-                <div class="ea-control-bar">
-                    <label class="ea-switch-label"><input type="checkbox" id="ea-auto-check-cb" checked> 自动勾选答案</label>
-                    <label class="ea-full-auto-label"><input type="checkbox" id="ea-full-auto-cb"> ⚡ 3s全自动切题</label>
+            <div id="ea-body">
+                <div id="ea-toggles">
+                    <div class="ea-toggle-item ${autoCheckEnabled?'on':''}" id="ea-toggle-auto">
+                        <span class="ea-toggle-label">自动勾选</span>
+                        <div class="ea-switch"><div class="ea-switch-track"></div><div class="ea-switch-thumb"></div></div>
+                    </div>
+                    <div class="ea-toggle-item" id="ea-toggle-full">
+                        <span class="ea-toggle-label">⚡ 3s切题</span>
+                        <div class="ea-switch"><div class="ea-switch-track"></div><div class="ea-switch-thumb"></div></div>
+                    </div>
                 </div>
-                <div class="ea-debug-bar" id="ea-debug-bar">等待题目...</div>
-                <div class="ea-search-bar">
-                    <input type="text" class="ea-input" id="ea-input-q" placeholder="正在读取题干...">
-                    <button class="ea-search-btn" id="ea-search-btn">搜答案</button>
+                <div id="ea-debug">正在连接云端服务器 (${CLOUD_DOMAIN})...</div>
+                <div id="ea-search-row">
+                    <input type="text" id="ea-input" placeholder="正在读取题干...">
+                    <button id="ea-search-btn">搜答案</button>
                 </div>
-                <div id="ea-results-list"></div>
-            </div>`;
-        (document.body || document.documentElement).appendChild(container);
+                <div id="ea-results"></div>
+            </div>
+        </div>`;
 
-        inputQ = document.getElementById('ea-input-q');
-        searchBtn = document.getElementById('ea-search-btn');
-        resultsList = document.getElementById('ea-results-list');
-        toggleBtn = document.getElementById('ea-toggle-btn');
-        bodyEl = document.getElementById('exam-assistant-body');
-        statusDot = document.getElementById('ea-status');
-        autoCheckCb = document.getElementById('ea-auto-check-cb');
-        fullAutoCb = document.getElementById('ea-full-auto-cb');
-        debugBar = document.getElementById('ea-debug-bar');
+        (document.body||document.documentElement).appendChild(container);
+        console.log('🚀 [网页考试助手 v101] 浮窗已成功注入页面！');
 
-        autoCheckCb.addEventListener('change', e => { autoCheckEnabled = e.target.checked; });
-        fullAutoCb.addEventListener('change', e => {
-            fullAutoEnabled = e.target.checked;
-            if (fullAutoEnabled) { lastSwitchTimestamp = Date.now(); setDebug('全自动已启动，3秒后切题...'); }
+        inputQ      = document.getElementById('ea-input');
+        searchBtn   = document.getElementById('ea-search-btn');
+        resultsList = document.getElementById('ea-results');
+        toggleBtn   = document.getElementById('ea-collapse-btn');
+        bodyEl      = document.getElementById('ea-body');
+        statusDot   = document.getElementById('ea-status-dot');
+        debugBar    = document.getElementById('ea-debug');
+        autoCheckToggle = document.getElementById('ea-toggle-auto');
+        fullAutoToggle  = document.getElementById('ea-toggle-full');
+
+        // 拨片 Toggle 点击
+        autoCheckToggle.addEventListener('click', ()=>{
+            autoCheckEnabled = !autoCheckEnabled;
+            autoCheckToggle.classList.toggle('on', autoCheckEnabled);
+            safeGMSetValue('autoCheckEnabled', autoCheckEnabled);
+        });
+        fullAutoToggle.addEventListener('click', ()=>{
+            fullAutoEnabled = !fullAutoEnabled;
+            fullAutoToggle.classList.toggle('on', fullAutoEnabled);
+            if (fullAutoEnabled) { lastSwitchTimestamp=Date.now(); setDebug('⚡ 全自动已启动，3秒后切题...'); }
+            else setDebug('全自动已关闭');
         });
 
-        // 拖拽
-        const header = document.getElementById('exam-assistant-header');
-        let drag = false, sx = 0, sy = 0, il = 0, it = 0;
-        header.addEventListener('mousedown', e => {
-            if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT') return;
-            drag = true; sx = e.clientX; sy = e.clientY;
-            const r = container.getBoundingClientRect(); il = r.left; it = r.top;
-            container.style.setProperty('right', 'auto', 'important');
-            container.style.setProperty('left', il + 'px', 'important');
-            container.style.setProperty('top', it + 'px', 'important');
-            const mv = e2 => {
-                if (!drag) return;
-                let nl = il + e2.clientX - sx, nt = it + e2.clientY - sy;
-                nl = Math.max(5, Math.min(window.innerWidth - container.offsetWidth - 5, nl));
-                nt = Math.max(5, Math.min(window.innerHeight - container.offsetHeight - 5, nt));
-                container.style.setProperty('left', nl + 'px', 'important');
-                container.style.setProperty('top', nt + 'px', 'important');
-            };
-            const up = () => { drag = false; window.removeEventListener('mousemove', mv, true); window.removeEventListener('mouseup', up, true); };
-            window.addEventListener('mousemove', mv, true);
-            window.addEventListener('mouseup', up, true);
-        });
-
-        toggleBtn.addEventListener('click', () => {
+        // 折叠
+        toggleBtn.addEventListener('click', ()=>{
             isCollapsed = !isCollapsed;
-            bodyEl.style.display = isCollapsed ? 'none' : 'flex';
-            container.style.height = isCollapsed ? '42px' : 'auto';
-            toggleBtn.innerText = isCollapsed ? '□' : '─';
+            bodyEl.style.display = isCollapsed?'none':'flex';
+            toggleBtn.innerText = isCollapsed?'□':'─';
         });
-        searchBtn.addEventListener('click', () => sendSearchQuery(inputQ.value));
-        inputQ.addEventListener('keypress', e => { if (e.key === 'Enter') sendSearchQuery(inputQ.value); });
-        document.addEventListener('selectionchange', () => {
-            if (selectionTimer) clearTimeout(selectionTimer);
-            selectionTimer = setTimeout(checkAndSearchSelection, 120);
-        }, true);
-        document.addEventListener('mouseup', e => { if (container && container.contains(e.target)) return; checkAndSearchSelection(); }, true);
+
+        if (searchBtn) searchBtn.addEventListener('click', ()=> sendSearchQuery(inputQ?inputQ.value:''));
+        if (inputQ) inputQ.addEventListener('keypress', e=>{ if(e.key==='Enter') sendSearchQuery(inputQ.value); });
+
+        // 拖拽（作用在 header 上）
+        const header = document.getElementById('ea-header');
+        if (header) {
+            let drag=false,sx=0,sy=0,il=0,it=0;
+            header.addEventListener('mousedown', e=>{
+                if(e.target.tagName==='BUTTON'||e.target.id==='ea-collapse-btn') return;
+                drag=true; sx=e.clientX; sy=e.clientY;
+                const r=container.getBoundingClientRect(); il=r.left; it=r.top;
+                container.style.setProperty('right','auto','important');
+                container.style.setProperty('left',il+'px','important');
+                container.style.setProperty('top',it+'px','important');
+                const mv=e2=>{
+                    if(!drag)return;
+                    let nl=il+e2.clientX-sx, nt=it+e2.clientY-sy;
+                    nl=Math.max(5,Math.min(window.innerWidth-container.offsetWidth-5,nl));
+                    nt=Math.max(5,Math.min(window.innerHeight-container.offsetHeight-5,nt));
+                    container.style.setProperty('left',nl+'px','important');
+                    container.style.setProperty('top',nt+'px','important');
+                };
+                const up=()=>{ drag=false; window.removeEventListener('mousemove',mv,true); window.removeEventListener('mouseup',up,true); };
+                window.addEventListener('mousemove',mv,true); window.addEventListener('mouseup',up,true);
+            });
+        }
+
+        document.addEventListener('selectionchange',()=>{ if(selectionTimer)clearTimeout(selectionTimer); selectionTimer=setTimeout(checkAndSearchSelection,120); },true);
+        document.addEventListener('mouseup',e=>{ if(container&&container.contains(e.target))return; checkAndSearchSelection(); },true);
     }
 
-    function setDebug(msg) { if (debugBar) debugBar.textContent = msg; }
+    function setDebug(msg) { if(debugBar) debugBar.textContent=msg; }
+    function markOnline(label) { if(statusDot){ statusDot.classList.add('online'); statusDot.title=`云端在线 (${label})`; } }
+    function markOffline() { if(statusDot) statusDot.classList.remove('online'); }
 
-    // ===== 破解防选中 =====
     function forceEnableSelection() {
         try {
-            if (document.getElementById('ea-force-select-style')) return;
-            const s = document.createElement('style');
-            s.id = 'ea-force-select-style';
-            s.innerHTML = `*,*::before,*::after{-webkit-user-select:text!important;user-select:text!important;pointer-events:auto!important;}`;
-            (document.head || document.documentElement).appendChild(s);
-            ['selectstart','contextmenu','mousedown','mouseup','keydown'].forEach(ev =>
-                window.addEventListener(ev, e => { if (container && container.contains(e.target)) return; e.stopPropagation(); }, true)
+            if(document.getElementById('ea-force-sel-style'))return;
+            const s=document.createElement('style'); s.id='ea-force-sel-style';
+            s.innerHTML='*,*::before,*::after{-webkit-user-select:text!important;user-select:text!important;pointer-events:auto!important;}';
+            (document.head||document.documentElement).appendChild(s);
+            ['selectstart','contextmenu','mousedown','mouseup','keydown'].forEach(ev=>
+                window.addEventListener(ev,e=>{ if(container&&container.contains(e.target))return; e.stopPropagation(); },true)
             );
         } catch(e) {}
     }
 
-    // ===== 时间戳托管守护引擎 =====
     function hostingDaemon() {
-        if (!fullAutoEnabled || isCaptchaPresent()) return;
-        const now = Date.now();
-        if (lastSwitchTimestamp === 0) { lastSwitchTimestamp = now; return; }
-        if (now - lastSwitchTimestamp >= 3000) {
-            lastSwitchTimestamp = now;
-            triggerNextQuestion();
-        }
+        if(!fullAutoEnabled||isCaptchaPresent())return;
+        const now=Date.now();
+        if(lastSwitchTimestamp===0){lastSwitchTimestamp=now;return;}
+        if(now-lastSwitchTimestamp>=3000){lastSwitchTimestamp=now;triggerNextQuestion();}
     }
 
-    // ===== 切题引擎 - 优先"下一题"按钮 =====
     function triggerNextQuestion() {
-        if (isSwitchingQuestion) return;
-        isSwitchingQuestion = true;
-        setTimeout(() => { isSwitchingQuestion = false; }, 1500);
-
-        // 策略1：找 <a> 或 <button>，innerText 严格等于"下一题"
-        const btns = Array.from(document.querySelectorAll('a, button')).filter(el => {
-            if (container && container.contains(el)) return false;
-            const t = (el.innerText || el.textContent || '').trim();
-            return (t === '下一题' || t === '下一页') && el.offsetWidth > 0;
-        });
-        if (btns.length > 0) {
-            setDebug(`✅ 策略1: 点击 <${btns[0].tagName}>"下一题"`);
-            singleClick(btns[0]);
-            return;
+        if(isSwitchingQuestion)return;
+        isSwitchingQuestion=true; setTimeout(()=>isSwitchingQuestion=false,1500);
+        const btns=Array.from(document.querySelectorAll('a,button')).filter(el=>{ if(container&&container.contains(el))return false; const t=(el.innerText||el.textContent||'').trim(); return (t==='下一题'||t==='下一页')&&el.offsetWidth>0; });
+        if(btns.length>0){setDebug('✅ 点击下一题');singleClick(btns[0]);return;}
+        const all=Array.from(document.querySelectorAll('*')).filter(el=>{ if(container&&container.contains(el))return false; const t=(el.innerText||el.textContent||'').trim(); return t==='下一题'&&el.offsetWidth>0&&el.offsetHeight>0; });
+        if(all.length>0){all.sort((a,b)=>a.children.length-b.children.length);setDebug('✅ 降级点击下一题');singleClick(all[0]);return;}
+        const cn=getCurrentQuestionNumber();
+        if(cn!==null&&cn>0){
+            const target=String(cn+1);
+            const cards=Array.from(document.querySelectorAll('span,div,a,button,li,td')).filter(el=>{ if(container&&container.contains(el))return false; const t=(el.innerText||el.textContent||'').trim(); if(t!==target)return false; const w=el.offsetWidth,h=el.offsetHeight; return w>=15&&w<=70&&h>=15&&h<=70; });
+            if(cards.length>0){setDebug(`✅ 点击答题卡 "${target}"`);singleClick(cards[0]);return;}
         }
-
-        // 策略2：任意元素严格等于"下一题"，取最叶子节点
-        const all = Array.from(document.querySelectorAll('*')).filter(el => {
-            if (container && container.contains(el)) return false;
-            const t = (el.innerText || el.textContent || '').trim();
-            return t === '下一题' && el.offsetWidth > 0 && el.offsetHeight > 0;
-        });
-        if (all.length > 0) {
-            all.sort((a, b) => a.children.length - b.children.length);
-            setDebug(`✅ 策略2: 降级点击 <${all[0].tagName}>"下一题" cls="${all[0].className.slice(0,25)}"`);
-            singleClick(all[0]);
-            return;
-        }
-
-        // 策略3：全局扫描数字格子 N+1
-        const currentNum = getCurrentQuestionNumber();
-        if (currentNum !== null && currentNum > 0) {
-            const target = String(currentNum + 1);
-            const cards = Array.from(document.querySelectorAll('span,div,a,button,li,td')).filter(el => {
-                if (container && container.contains(el)) return false;
-                const t = (el.innerText || el.textContent || '').trim();
-                if (t !== target) return false;
-                const w = el.offsetWidth, h = el.offsetHeight;
-                return w >= 15 && w <= 70 && h >= 15 && h <= 70;
-            });
-            if (cards.length > 0) {
-                setDebug(`✅ 策略3: 点击答题卡格子 "${target}"`);
-                singleClick(cards[0]);
-                return;
-            }
-        }
-
-        setDebug('⚠️ 三种策略均未找到目标，请截图反馈！');
+        setDebug('⚠️ 未找到"下一题"');
     }
 
-    // ===== 🌟 单次点击：只用一种方式，绝对不重复，杜绝跳2题 =====
     function singleClick(el) {
-        if (!el) return;
+        if(!el)return;
         try {
-            // 如果是内联叶子元素，上升到可点击父级
-            let node = el;
-            if (['SPAN','I','P','EM','STRONG'].includes(el.tagName) && el.parentElement &&
-                ['A','BUTTON','DIV','LI'].includes(el.parentElement.tagName)) {
-                node = el.parentElement;
-            }
-            // 只选一种方式点击！优先 jQuery（兼容 Regular.js）
-            const jq = win.jQuery || win.$ || null;
-            if (jq) {
-                jq(node).trigger('click');
-                return; // ← 立即返回，不再执行后续任何点击
-            }
-            // jQuery 不可用，用原生 .click()
-            if (typeof node.click === 'function') {
-                node.click();
-                return;
-            }
-            // 最后兜底，MouseEvent
-            node.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: win || window }));
-        } catch(e) {}
+            let node=el;
+            if(['SPAN','I','P','EM','STRONG'].includes(el.tagName)&&el.parentElement&&['A','BUTTON','DIV','LI','LABEL'].includes(el.parentElement.tagName))node=el.parentElement;
+            const jq=win.jQuery||win.$||null;
+            if(jq){try{jq(node).trigger('click');return;}catch(e){}}
+            if(typeof node.click==='function'){node.click();return;}
+            node.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,view:win||window}));
+        } catch(e){}
     }
 
-    // ===== 验证码检测 =====
     function isCaptchaPresent() {
-        const kws = ['安全验证','拖动滑块','完成验证','验证码','拼图'];
-        for (const el of document.querySelectorAll('div,span')) {
-            if (container && container.contains(el)) continue;
-            const t = (el.innerText || el.textContent || '').trim();
-            if (kws.some(k => t.includes(k)) && el.offsetWidth > 0) return true;
+        const kws=['安全验证','拖动滑块','完成验证','验证码','拼图'];
+        for(const el of document.querySelectorAll('div,span')){
+            if(container&&container.contains(el))continue;
+            const t=(el.innerText||el.textContent||'').trim();
+            if(kws.some(k=>t.includes(k))&&el.offsetWidth>0)return true;
         }
         return false;
     }
 
-    // ===== 题干提取（按位置过滤侧边栏）=====
+    function isElementInCenterViewport(el) {
+        if (!el || (container && container.contains(el))) return false;
+        try {
+            const rect = el.getBoundingClientRect();
+            if (rect.width < 50 || rect.height < 10) return false;
+            const centerY = (rect.top + rect.bottom) / 2;
+            const vh = window.innerHeight;
+            // 核心几何锁：中心点必须落于当前屏幕高度的 12% 到 88% 视口区间内！
+            return (centerY >= vh * 0.12 && centerY <= vh * 0.88);
+        } catch(e) { return false; }
+    }
+
     function getRawTitleText() {
-        // 优先：精确 CSS 选择器
-        const sels = ['.ques-title','.question-title','.question-item-title','.question-content','.ques-name','.question_title',
-                      '[class*="ques-title"]','[class*="question-title"]','[class*="ques-name"]'];
-        for (const sel of sels) {
-            try {
-                const el = document.querySelector(sel);
-                if (el && container && !container.contains(el)) {
-                    const t = (el.innerText || el.textContent || '').trim();
-                    if (t.length >= 4) return t;
+        const sels=['.ques-title','.question-title','.question-item-title','.question-content','.ques-name','.question_title','[class*="ques-title"]','[class*="question-title"]','[class*="ques-name"]','.item-title','.q-title'];
+        
+        // 1. 优先扫描 CSS 专属类名节点（中心视口匹配）
+        for(const sel of sels){
+            try{
+                const els=document.querySelectorAll(sel);
+                for(const el of els){
+                    if(isElementInCenterViewport(el)){
+                        const t=(el.innerText||el.textContent||'').trim();
+                        if(t.length>=4) return t;
+                    }
                 }
-            } catch(e) {}
+            }catch(e){}
         }
-        // 回退：全局扫描，但过滤左侧边栏（left < 160px 的元素跳过）
-        for (const el of document.querySelectorAll('body *')) {
-            if (container && container.contains(el)) continue;
-            try {
-                const rect = el.getBoundingClientRect();
-                if (rect.left < 160 || rect.width < 80) continue; // 跳过侧边栏
-            } catch(e) { continue; }
-            const t = (el.innerText || el.textContent || '').trim();
-            if (t.length >= 5 && t.length <= 500 && /^\d+[、.（(]/.test(t)) return t;
+
+        // 2. 全局保底扫描：找中心视口范围内符合数字题号开头的节点
+        for(const el of document.querySelectorAll('body *')){
+            try{
+                const cls=(el.className||'').toString().toLowerCase();
+                if(/(sidebar|drawer|card-list|sheet|answer-card|side-bar)/i.test(cls)) continue;
+                if(isElementInCenterViewport(el)){
+                    const t=(el.innerText||el.textContent||'').trim();
+                    if(t.length>=5&&t.length<=500&&/^\d+[、.（(]/.test(t)) return t;
+                }
+            }catch(e){}
         }
         return '';
     }
 
     function autoExtractTitle() {
-        const raw = getRawTitleText();
-        if (!raw || raw.length < 4) return '';
-        return raw
-            .replace(/^[（(]?\d+[）).、\s]*/, '')
-            .replace(/^(单选题|多选题|判断题|填空题|问答题)[：:\s]*/, '')
-            .replace(/\(\s*\d+\s*分\s*\)/g, '')
-            .trim();
+        const raw=getRawTitleText(); if(!raw||raw.length<4)return '';
+        return raw.replace(/^[（(]?\d+[）).、\s]*/,'').replace(/^(单选题|多选题|判断题|填空题|问答题)[：:\s]*/,'').replace(/\(\s*\d+\s*分\s*\)/g,'').trim();
     }
 
     function getCurrentQuestionNumber() {
-        try {
-            const raw = getRawTitleText();
-            if (!raw) return null;
-            const m = raw.match(/^[（(]?(\d+)[）).、\s]/);
-            if (m) return parseInt(m[1], 10);
-        } catch(e) {}
+        try{const raw=getRawTitleText(); if(!raw)return null; const m=raw.match(/^[（(]?(\d+)[）).、\s]/); if(m)return parseInt(m[1],10);}catch(e){}
         return null;
     }
 
-    // ===== 自动扫描 =====
     function autoScanLoop() {
-        if (isCaptchaPresent()) {
-            if (resultsList) resultsList.innerHTML = `
-                <div class="ea-notfound-card" style="background:rgba(251,191,36,.2);border-color:rgba(251,191,36,.6);color:#fbbf24;">
-                    <strong>🛡️ 已触发滑动验证</strong><br>
-                    <span style="font-size:11px;">请手动完成验证后，助手将自动恢复。</span>
-                </div>`;
-            return;
-        }
-        const now = Date.now();
-        if (now - lastAutoProcessTime < 600) return;
-        const title = autoExtractTitle();
-        if (title && title.length >= 4 && title !== currentTitleHash) {
-            currentTitleHash = title;
-            lastAutoProcessTime = now;
-            if (inputQ) inputQ.value = title;
-            setDebug('题干已更新，搜题中...');
+        if(isCaptchaPresent()){if(resultsList)resultsList.innerHTML='<div class="ea-warn-card"><div class="ea-warn-header">🛡️ 滑动验证已触发</div><div class="ea-warn-body">请手动完成验证，助手将自动恢复。</div></div>';return;}
+        const now=Date.now(); if(now-lastAutoProcessTime<600)return;
+        const title=autoExtractTitle();
+        if(title&&title.length>=4&&title!==currentTitleHash){
+            currentTitleHash=title; lastAutoProcessTime=now;
+            if(inputQ)inputQ.value=title;
+            setDebug('题干已更新，云端搜题中...');
             sendSearchQuery(title);
         }
     }
 
-    // ===== 收集选项文本（供后端参考）=====
-    function collectOptions() {
-        try {
-            const texts = [];
-            // 在主内容区（left > 160px）找选项
-            document.querySelectorAll('div,label,li,span,p').forEach(el => {
-                if (container && container.contains(el)) return;
-                try {
-                    const rect = el.getBoundingClientRect();
-                    if (rect.left < 160 || rect.width < 20) return;
-                } catch(e) { return; }
-                const t = (el.innerText || el.textContent || '').trim();
-                if (t && t.length >= 1 && t.length <= 100 &&
-                    !t.includes('上一题') && !t.includes('下一题') &&
-                    /^[A-G][.、:\s（(]|^[A-G]$/.test(t)) {
-                    texts.push(t);
-                }
+    function getPageOptionsMap() {
+        const map={};
+        const ALL=['A','B','C','D','E','F','G'];
+        ALL.forEach(letter=>{
+            const others=ALL.filter(l=>l!==letter);
+            const pfx=[`${letter}.`,`${letter}、`,`${letter}:`,`${letter} `,`(${letter})`,`（${letter}）`];
+            const cands=Array.from(document.querySelectorAll('body *')).filter(el=>{
+                if(container&&container.contains(el))return false;
+                const text=(el.innerText||el.textContent||'').trim();
+                if(!text||text.length>300)return false;
+                if(others.some(ol=>text.includes(`${ol}.`)||text.includes(`${ol}、`)||text.includes(`${ol}:`)))return false;
+                return pfx.some(p=>text.startsWith(p));
             });
-            return [...new Set(texts)];
-        } catch(e) { return []; }
-    }
-
-    // ===== 划词搜索 =====
-    function checkAndSearchSelection() {
-        try {
-            const sel = window.getSelection();
-            if (!sel) return;
-            const t = sel.toString().trim();
-            if (container && container.contains(document.activeElement)) return;
-            if (t && t.length >= 2 && t !== lastSelectedText) {
-                lastSelectedText = t;
-                if (inputQ) inputQ.value = t;
-                sendSearchQuery(t);
+            if(cands.length>0){
+                cands.sort((a,b)=>(a.innerText||'').length-(b.innerText||'').length);
+                let raw=(cands[0].innerText||cands[0].textContent||'').trim();
+                raw=raw.replace(/^[A-G][.、:\s（(]*/i,'').trim();
+                if(raw)map[letter]=raw;
             }
-        } catch(e) {}
-    }
-
-    // ===== 🌟 自动打钩 - 恢复 v24 原版逻辑（body * 全扫，稳定可用）=====
-    function autoClickAnswerOption(matchData) {
-        if (!autoCheckEnabled || !matchData) return false;
-        const rawAns = (matchData.answer_letter || matchData.display_answer || '').trim();
-        if (!rawAns) return false;
-
-        // 判断题特殊处理
-        let targetLetters = [];
-        let isTF = false;
-        if (/正确|^对$|^√$|^true$/i.test(rawAns)) { targetLetters = ['A']; isTF = true; }
-        else if (/错误|^错$|^×$|^false$/i.test(rawAns)) { targetLetters = ['B']; isTF = true; }
-        else {
-            targetLetters = [...new Set(rawAns.replace(/[^A-Za-z]/g, '').toUpperCase().split(''))].filter(Boolean);
-        }
-        if (targetLetters.length === 0) return false;
-
-        const ALL_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
-        let totalSuccessCount = 0;
-
-        targetLetters.forEach((letter, index) => {
-            const delay = index * 140;
-
-            setTimeout(() => {
-                // 与 v24 完全相同的前缀列表
-                const letterPrefixes = [
-                    `${letter}.`, `${letter}、`, `${letter}:`, `${letter} `,
-                    `${letter} .`, `${letter} 、`, `(${letter})`, `（${letter}）`
-                ];
-                if (isTF) {
-                    if (letter === 'A') letterPrefixes.push('对', '正确', '√');
-                    if (letter === 'B') letterPrefixes.push('错', '错误', '×');
-                }
-
-                const otherLetters = ALL_LETTERS.filter(l => l !== letter);
-
-                // 🌟 与 v24 完全相同：扫全部 body 元素，不限标签
-                const candidateNodes = Array.from(document.querySelectorAll('body *')).filter(el => {
-                    if (container && container.contains(el)) return false;
-
-                    const text = (el.innerText || el.textContent || '').trim();
-                    if (!text || text.length > 300) return false;
-
-                    // 剔除包含其他选项字母的大父框
-                    const containsOtherOptions = otherLetters.some(ol =>
-                        text.includes(`${ol}.`) || text.includes(`${ol}、`) || text.includes(`${ol}:`)
-                    );
-                    if (containsOtherOptions) return false;
-
-                    return letterPrefixes.some(p => text.startsWith(p)) || text === letter;
-                });
-
-                if (candidateNodes.length === 0) {
-                    setDebug(`⚠️ 未找到选项 ${letter}，跳过`);
-                    return;
-                }
-
-                // 取 innerText 最短的（最叶子节点）
-                candidateNodes.sort((a, b) => (a.innerText || '').length - (b.innerText || '').length);
-                const targetNode = candidateNodes[0];
-                setDebug(`⚡ 勾选 ${letter}: "${(targetNode.innerText || '').trim().slice(0, 20)}"`);
-
-                try {
-                    // 与 v24 完全相同的点击逻辑
-                    const jq = win.jQuery || win.$ || (typeof $ !== 'undefined' ? $ : null);
-                    if (jq) {
-                        try { jq(targetNode).trigger('click'); } catch(e) {}
-                        if (targetNode.parentElement) { try { jq(targetNode.parentElement).trigger('click'); } catch(e) {} }
-                    }
-                    if (typeof targetNode.click === 'function') targetNode.click();
-                    if (targetNode.parentElement && typeof targetNode.parentElement.click === 'function') targetNode.parentElement.click();
-
-                    const evtOpts = { bubbles: true, cancelable: true, view: win || window };
-                    targetNode.dispatchEvent(new MouseEvent('mousedown', evtOpts));
-                    targetNode.dispatchEvent(new MouseEvent('mouseup', evtOpts));
-                    targetNode.dispatchEvent(new MouseEvent('click', evtOpts));
-
-                    // 尝试点击内部 radio/checkbox input
-                    const innerSquare = targetNode.querySelector
-                        ? targetNode.querySelector('i, input, .el-checkbox__inner, .el-radio__inner')
-                        : null;
-                    if (innerSquare) {
-                        if (typeof innerSquare.click === 'function') innerSquare.click();
-                        innerSquare.dispatchEvent(new MouseEvent('click', evtOpts));
-                    }
-                } catch(e) {}
-            }, delay);
-
-            totalSuccessCount++;
         });
-
-        return totalSuccessCount > 0;
+        return map;
     }
 
-    // ===== 后端连接 =====
-    function autoConnectBackend() {
-        if (isConnected && !fallbackMode) return;
-        tryWss();
+    function collectOptions() {
+        const map=getPageOptionsMap();
+        const list=Object.entries(map).map(([k,v])=>`${k}. ${v}`);
+        return list.length>0?list:[];
     }
-    function tryWss() {
-        try {
-            socket = new WebSocket('wss://127.0.0.1:8000/ws');
-            socket.onopen = () => { isConnected = true; fallbackMode = false; activeType = 'wss'; markOnline('WSS'); };
-            socket.onmessage = e => { try { renderSingleResult(JSON.parse(e.data)); } catch(err) {} };
-            socket.onerror = () => tryWs();
-            socket.onclose = () => { if (activeType === 'wss') tryWs(); };
-        } catch(e) { tryWs(); }
-    }
-    function tryWs() {
-        try {
-            socket = new WebSocket('ws://127.0.0.1:8000/ws');
-            socket.onopen = () => { isConnected = true; fallbackMode = false; activeType = 'ws'; markOnline('WS'); };
-            socket.onmessage = e => { try { renderSingleResult(JSON.parse(e.data)); } catch(err) {} };
-            socket.onerror = () => startHttpFallback();
-            socket.onclose = () => startHttpFallback();
-        } catch(e) { startHttpFallback(); }
-    }
-    function startHttpFallback() {
-        if (typeof GM_xmlhttpRequest === 'undefined') { renderErrorUI(); return; }
-        GM_xmlhttpRequest({ method:'GET', url:'https://127.0.0.1:8000/', timeout:2000,
-            onload: r => { if (r.status===200) { isConnected=true; fallbackMode=true; activeType='gm_https'; markOnline('HTTPS'); } else tryHttpFallback(); },
-            onerror: tryHttpFallback, ontimeout: tryHttpFallback });
-    }
-    function tryHttpFallback() {
-        if (typeof GM_xmlhttpRequest === 'undefined') { renderErrorUI(); return; }
-        GM_xmlhttpRequest({ method:'GET', url:'http://127.0.0.1:8000/', timeout:2000,
-            onload: r => { if (r.status===200) { isConnected=true; fallbackMode=true; activeType='gm_http'; markOnline('HTTP'); } else renderErrorUI(); },
-            onerror: renderErrorUI, ontimeout: renderErrorUI });
-    }
-    function markOnline(label) { if (statusDot) { statusDot.classList.add('online'); statusDot.title=`已连接(${label})`; } }
 
-    // ===== 搜索请求 =====
-    function sendSearchQuery(query) {
-        if (!query || query.trim().length < 2) return;
-        if (resultsList) resultsList.innerHTML = '<div style="color:#9ca3af;text-align:center;padding:10px;">⚡ 检索中...</div>';
-        const options = collectOptions();
-        const payload = JSON.stringify({ query, options, limit: 1 });
-        if (socket && socket.readyState === WebSocket.OPEN && !fallbackMode) {
-            socket.send(JSON.stringify({ query, options })); return;
+    function checkAndSearchSelection() {
+        try{const sel=window.getSelection(); if(!sel)return; const t=sel.toString().trim(); if(container&&container.contains(document.activeElement))return; if(t&&t.length>=2&&t!==lastSelectedText){lastSelectedText=t; if(inputQ)inputQ.value=t; sendSearchQuery(t);}}catch(e){}
+    }
+
+    function isOptionCheckedDeep(optionBox) {
+        if(!optionBox)return false;
+        const input=optionBox.querySelector('input[type="checkbox"],input[type="radio"]')||(optionBox.tagName==='INPUT'?optionBox:null);
+        if(input&&(input.checked||input.getAttribute('aria-checked')==='true'))return true;
+        const allNodes=[optionBox,...Array.from(optionBox.querySelectorAll('*'))];
+        for(const node of allNodes){
+            const cls=(node.className||'').toString();
+            if(/(z-checked|z-sel|is-checked|checked|selected|active|\bon\b|cur|current)/i.test(cls))return true;
+            if(node.getAttribute('aria-checked')==='true')return true;
         }
-        if (typeof GM_xmlhttpRequest === 'undefined') { renderErrorUI(); return; }
-        const url = (activeType === 'gm_https' || location.protocol === 'https:')
-            ? 'https://127.0.0.1:8000/api/search' : 'http://127.0.0.1:8000/api/search';
-        GM_xmlhttpRequest({ method:'POST', url, headers:{'Content-Type':'application/json'}, data:payload,
-            onload: r => { if (r.status===200) { markOnline(activeType||'HTTP'); try { renderSingleResult(JSON.parse(r.responseText)); } catch(e) {} } else retryHttp(payload); },
-            onerror: () => retryHttp(payload) });
-    }
-    function retryHttp(payload) {
-        if (typeof GM_xmlhttpRequest === 'undefined') { renderErrorUI(); return; }
-        GM_xmlhttpRequest({ method:'POST', url:'http://127.0.0.1:8000/api/search',
-            headers:{'Content-Type':'application/json'}, data:payload,
-            onload: r => { if (r.status===200) { markOnline('HTTP'); try { renderSingleResult(JSON.parse(r.responseText)); } catch(e) {} } else renderErrorUI(); },
-            onerror: renderErrorUI });
+        return false;
     }
 
-    // ===== 渲染结果 =====
-    function renderErrorUI() {
-        if (statusDot) statusDot.classList.remove('online');
-        if (!resultsList) return;
-        resultsList.innerHTML = `<div class="ea-notfound-card"><strong>⚠️ 未能连接到 Python 后端</strong><br>
-            <span style="font-size:11px;">请授权：<a class="ea-auth-link" href="https://127.0.0.1:8000/" target="_blank">https://127.0.0.1:8000/</a></span></div>`;
+    function cleanText(s){return(s||'').toLowerCase().replace(/[^\u4e00-\u9fa5a-z0-9]/g,'');}
+
+    function textSimilarity(a,b){
+        const ca=cleanText(a),cb=cleanText(b);
+        if(!ca||!cb)return 0; if(ca===cb)return 1;
+        const shorter=ca.length<cb.length?ca:cb, longer=ca.length<cb.length?cb:ca;
+        if(longer.includes(shorter))return shorter.length/longer.length;
+        let overlap=0; for(const ch of shorter){if(longer.includes(ch))overlap++;}
+        return overlap/longer.length;
     }
 
-    function renderSingleResult(data) {
-        if (!resultsList) return;
-        if (!data || !data.found) {
-            const s = (data && data.highest_score) ? ` (最高相似${data.highest_score}%)` : '';
-            resultsList.innerHTML = `<div class="ea-notfound-card"><strong>⚠️ 题库未匹配</strong>${s}<br>
-                <span style="font-size:11px;opacity:.8;">3秒后自动跳过本题...</span></div>`;
+    function calcOverallOptionsSimilarity(dbOpts,webOpts){
+        const dbVals=Object.values(dbOpts).filter(Boolean), webVals=Object.values(webOpts).filter(Boolean);
+        if(dbVals.length===0||webVals.length===0)return 0;
+        let total=0;
+        dbVals.forEach(dbText=>{ let best=0; webVals.forEach(webText=>{const s=textSimilarity(dbText,webText); if(s>best)best=s;}); total+=best; });
+        return total/dbVals.length;
+    }
+
+    function remapLettersByContent(origLetters,dbOpts,webOpts){
+        if(!origLetters||origLetters.length===0)return{letters:[],isRemapped:false,isValidMatch:false};
+        if(Object.keys(dbOpts).length===0||Object.keys(webOpts).length===0){
+            return{letters:origLetters,isRemapped:false,isValidMatch:true};
+        }
+        const finalLetters=[]; let isRemapped=false; let validCount=0;
+        origLetters.forEach(origLetter=>{
+            const dbText=dbOpts[origLetter];
+            if(!dbText){ finalLetters.push(origLetter); validCount++; return; }
+            let bestLetter=null, bestSim=0;
+            for(const[webLetter,webText]of Object.entries(webOpts)){
+                const sim=textSimilarity(dbText,webText);
+                if(sim>bestSim){bestSim=sim;bestLetter=webLetter;}
+            }
+            // 🌟 文本匹配碰撞强校验：只有相似度 >= 0.45 才可以重映射！
+            if(bestSim>=0.45&&bestLetter){
+                finalLetters.push(bestLetter); validCount++;
+                if(bestLetter!==origLetter)isRemapped=true;
+            }
+        });
+        const uniqueLetters=[...new Set(finalLetters)];
+        const isValidMatch = validCount>0 && uniqueLetters.length===origLetters.length;
+        return{letters:uniqueLetters,isRemapped,isValidMatch};
+    }
+
+    function autoClickAnswerOption(targetLetters){
+        if(!autoCheckEnabled||!targetLetters||targetLetters.length===0)return;
+        const ALL=['A','B','C','D','E','F','G'];
+        const targetSet=new Set(targetLetters);
+        ALL.forEach((letter,index)=>{
+            setTimeout(()=>{
+                const pfx=[`${letter}.`,`${letter}、`,`${letter}:`,`${letter} `,`${letter} .`,`${letter} 、`,`(${letter})`,`（${letter}）`];
+                const others=ALL.filter(l=>l!==letter);
+                const cands=Array.from(document.querySelectorAll('body *')).filter(el=>{
+                    if(container&&container.contains(el))return false;
+                    const text=(el.innerText||el.textContent||'').trim();
+                    if(!text||text.length>300)return false;
+                    if(others.some(ol=>text.includes(`${ol}.`)||text.includes(`${ol}、`)||text.includes(`${ol}:`)))return false;
+                    return pfx.some(p=>text.startsWith(p))||text===letter;
+                });
+                if(cands.length===0)return;
+                cands.sort((a,b)=>(a.innerText||'').length-(b.innerText||'').length);
+                const targetNode=cands[0];
+                let optionBox=targetNode;
+                while(optionBox&&optionBox.parentElement&&optionBox.parentElement.tagName!=='BODY'){
+                    if(optionBox.tagName==='LABEL'||optionBox.classList.contains('el-checkbox')||optionBox.classList.contains('el-radio')||(optionBox.offsetWidth>100&&optionBox.children.length>1))break;
+                    optionBox=optionBox.parentElement;
+                }
+                const isChecked=isOptionCheckedDeep(optionBox);
+                const shouldCheck=targetSet.has(letter);
+                const clickTarget=(optionBox&&optionBox.querySelector)?(optionBox.querySelector('input,.el-checkbox__inner,.el-radio__inner,i')||optionBox):targetNode;
+                if(shouldCheck&&!isChecked){setDebug(`⚡ 补勾选漏选选项 ${letter}`);singleClick(clickTarget);}
+                else if(!shouldCheck&&isChecked){setDebug(`🧹 撤销误勾选选项 ${letter}`);singleClick(clickTarget);}
+                else if(shouldCheck&&isChecked){setDebug(`🔒 选项 ${letter} 已正确勾选，保护不动`);}
+            },index*140);
+        });
+    }
+
+    function autoConnectBackend(){if(isConnected&&!fallbackMode)return;tryCloudWs();}
+
+    function tryCloudWs(){
+        try{
+            socket=new WebSocket(`ws://${CLOUD_DOMAIN}/ws/search`);
+            socket.onopen=()=>{isConnected=true;fallbackMode=false;activeType='wss_cloud';markOnline('云端WSS');};
+            socket.onmessage=e=>{try{handleResponseData(JSON.parse(e.data));}catch(err){}};
+            socket.onerror=()=>startCloudHttp(); socket.onclose=()=>startCloudHttp();
+        }catch(e){startCloudHttp();}
+    }
+
+    function startCloudHttp(){
+        if(typeof GM_xmlhttpRequest==='undefined'){renderErrorUI();return;}
+        GM_xmlhttpRequest({method:'GET',url:`${TOKEN_INFO_URL}?token=${encodeURIComponent(USER_TOKEN)}&device_id=${encodeURIComponent(DEVICE_ID)}`,timeout:2500,onload:()=>{isConnected=true;fallbackMode=true;activeType='cloud_http';markOnline('云端HTTP');},onerror:renderErrorUI,ontimeout:renderErrorUI});
+    }
+
+    function sendSearchQuery(query){
+        if(!query||query.trim().length<2)return;
+        if(resultsList)resultsList.innerHTML='<div style="color:rgba(148,163,184,0.5);text-align:center;padding:14px;font-size:11px;">⚡ 云端检索中...</div>';
+        const cleanQuery=query.replace(/^\d+[\s\S]*?(单选题|多选题|判断题|填空题)[：:\s]*/i,'').replace(/^\d+[.、．\s]+/,'').trim();
+        const options=collectOptions();
+        if(socket&&socket.readyState===WebSocket.OPEN&&!fallbackMode){socket.send(JSON.stringify({query:cleanQuery,options,token:USER_TOKEN}));return;}
+        if(typeof GM_xmlhttpRequest==='undefined'){renderErrorUI();return;}
+        GM_xmlhttpRequest({
+            method:'GET',
+            url:`${HTTP_URL}?q=${encodeURIComponent(cleanQuery)}&token=${encodeURIComponent(USER_TOKEN)}&device_id=${encodeURIComponent(DEVICE_ID)}&options=${encodeURIComponent(JSON.stringify(options))}`,
+            headers:{'Content-Type':'application/json'},timeout:8000,
+            onload:r=>{if(r.status===200){markOnline(activeType||'云端在线');try{handleResponseData(JSON.parse(r.responseText));}catch(e){}}else renderErrorUI();},
+            onerror:renderErrorUI
+        });
+    }
+
+    function handleResponseData(data){renderSingleResult(data);}
+
+    function renderErrorUI(){
+        markOffline();
+        if(!resultsList)return;
+        resultsList.innerHTML=`<div class="ea-notfound-card"><strong>⚠️ 未能连接到云端</strong><br>服务器: ${CLOUD_DOMAIN}</div>`;
+    }
+
+    function renderSingleResult(data){
+        if(!resultsList)return;
+        if(!data||(!data.found&&!data.success)){
+            const s=(data&&data.highest_score)?` — 最高相似度 ${data.highest_score}%`:'';
+            resultsList.innerHTML=`<div class="ea-notfound-card"><strong>⚠️ 题库未匹配</strong>${s}</div>`;
             return;
         }
-        const match = data.match, ans = match.display_answer;
-        autoClickAnswerOption(match);
-        resultsList.innerHTML = `
-            <div class="ea-exact-card">
-                <div style="display:flex;justify-content:space-between;color:#34d399;font-size:11px;font-weight:600;">
-                    <span>✅ 匹配成功 (${data.score}%)</span>
-                    <span style="color:#60a5fa;font-weight:bold;">⚡ 3s后切下一题</span>
-                </div>
-                <div style="color:#e5e7eb;font-size:12px;line-height:1.4;">${esc(match.title)}</div>
-                <div class="ea-exact-ans-box">
-                    <span>正确答案: ${esc(ans)}</span>
-                    <button class="ea-copy-btn-bright" id="ea-copy-btn">复制</button>
-                </div>
+        const match=data.match||data;
+        let rawAns=(data.answer||match.display_answer||match.answer_letter||'未知').toString().trim();
+        const dbOpts=data.options||match.options||{};
+        const webOpts=getPageOptionsMap();
+        let isTF=false;
+        if(/^(correct|true|正确|对|√|yes|right)$/i.test(rawAns)){rawAns='A';isTF=true;}
+        else if(/^(wrong|false|错误|错|×|no)$/i.test(rawAns)){rawAns='B';isTF=true;}
+        const origLetters=[...new Set(rawAns.replace(/[^A-Za-z]/g,'').toUpperCase().split(''))].filter(Boolean);
+
+        const overallSim=(Object.keys(dbOpts).length>0&&Object.keys(webOpts).length>0)?calcOverallOptionsSimilarity(dbOpts,webOpts):1.0;
+        let finalLetters=origLetters,isRemapped=false,statusType='exact';
+        
+        if (Object.keys(dbOpts).length>0 && Object.keys(webOpts).length>0) {
+            const r=remapLettersByContent(origLetters,dbOpts,webOpts);
+            if (r.isValidMatch && r.letters.length>0) {
+                finalLetters=r.letters;
+                isRemapped=r.isRemapped;
+                statusType=isRemapped?'remapped':'exact';
+            } else {
+                statusType='mismatch';
+            }
+        }
+
+        let displayAns='';
+        if(isTF){displayAns=finalLetters.includes('A')?'A. 正确':'B. 错误';}
+        else{displayAns=finalLetters.join(', ');}
+
+        if(statusType!=='mismatch'&&finalLetters.length>0) autoClickAnswerOption(finalLetters);
+        else setDebug('⚠️ 选项文本不匹配（疑似同题干变体题），已停止勾选');
+
+        if(statusType==='mismatch'||finalLetters.length===0){
+            resultsList.innerHTML=`
+            <div class="ea-warn-card">
+                <div class="ea-warn-header">⚠️ 疑似同题干变体题目 <span class="ea-badge-mismatch">选项重合度 ${Math.round(overallSim*100)}%</span></div>
+                <div class="ea-warn-body">数据库答案文本与当前页面选项完全不符合，可能是相同题干但不同选项池的变体题目。<br><br>DB原始答案字母：<strong>${origLetters.join(', ')}</strong><br>已停止盲目勾选，请人工核对选项。</div>
             </div>`;
-        const btn = document.getElementById('ea-copy-btn');
-        if (btn) btn.addEventListener('click', function() {
-            navigator.clipboard.writeText(ans).then(() => { this.innerText='已复制!'; setTimeout(()=>this.innerText='复制',1500); });
-        });
+            return;
+        }
+
+        // 🌟 仅构建正确选项的详细文本展示
+        let optHtml='';
+        if (finalLetters.length > 0) {
+            const rows = finalLetters.map(l => {
+                const text = webOpts[l] || dbOpts[l] || '';
+                if (!text) return '';
+                return `<div class="ea-opt-row correct">
+                    <span class="ea-opt-letter">${l}.</span>
+                    <span class="ea-opt-text">${esc(text)}</span>
+                    <span class="ea-opt-check">✓</span>
+                </div>`;
+            }).filter(Boolean).join('');
+            
+            if (rows) {
+                optHtml = `<div class="ea-options-list">${rows}</div>`;
+            }
+        }
+
+        const badge=isRemapped?`<span class="ea-badge-remap">已重映射</span>`:`<span style="color:rgba(148,163,184,0.5);font-size:9px;">验证${Math.round(overallSim*100)}%</span>`;
+        const distinctList = (data.distinct_answers||[]).filter(a=>a&&a!==origLetters.join(''));
+        const altAnsHtml = distinctList.length>0 ? `<div style="font-size:10px;color:rgba(251,191,36,0.85);padding:0 12px 6px;">💡 同题干另有答案版本: <strong>${distinctList.join(' / ')}</strong></div>` : '';
+
+        resultsList.innerHTML=`
+        <div class="ea-result-card">
+            <div class="ea-result-card-header">
+                <span class="ea-match-label">✓ 匹配成功 ${badge}</span>
+                <span class="ea-auto-label">⚡ 3s切题</span>
+            </div>
+            <div class="ea-question-text">${esc((match.title||match.q_title||'').slice(0,80))}${(match.title||match.q_title||'').length>80?'...':''}</div>
+            <div class="ea-answer-block">
+                <div class="ea-answer-letter">${esc(displayAns)}</div>
+                <div class="ea-answer-right">
+                    <button class="ea-copy-btn" id="ea-copy-btn">复制答案</button>
+                </div>
+            </div>
+            ${altAnsHtml}
+            ${optHtml}
+        </div>`;
+
+        const btn=document.getElementById('ea-copy-btn');
+        if(btn)btn.addEventListener('click',function(){navigator.clipboard.writeText(displayAns).then(()=>{this.innerText='已复制✓';setTimeout(()=>this.innerText='复制答案',1500);});});
     }
 
-    function esc(t) { return (t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+    function esc(t){return(t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 
-    // ===== 启动 =====
-    function startRun() {
-        forceEnableSelection();
-        createFloatingUI();
-        autoConnectBackend();
-    }
-    if (document.readyState === 'complete' || document.readyState === 'interactive') { startRun(); }
-    else { window.addEventListener('DOMContentLoaded', startRun); window.addEventListener('load', startRun); }
-
-    setInterval(startRun, 1000);
-    setInterval(autoScanLoop, 350);
-    setInterval(hostingDaemon, 300);
+    function startRun(){forceEnableSelection();createFloatingUI();autoConnectBackend();}
+    if(document.readyState==='complete'||document.readyState==='interactive')startRun();
+    else{window.addEventListener('DOMContentLoaded',startRun);window.addEventListener('load',startRun);}
+    setInterval(startRun,1000);
+    setInterval(autoScanLoop,350);
+    setInterval(hostingDaemon,300);
 
 })();
