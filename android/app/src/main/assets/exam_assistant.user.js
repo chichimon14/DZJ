@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         网页考试助手 Premium v99 - 屏幕中心几何锁定+0%误杀精准抓题
+// @name         网页考试助手 Premium v102 - 极速全环境兼容高容错版
 // @namespace    http://tampermonkey.net/
-// @version      99.0.0
-// @description  引入屏幕 Y 轴几何中心 (0.15~0.85 * innerHeight) 绝对锁定算法，彻底消除上一题与预加载下一题干扰
+// @version      102.0.0
+// @description  同题干多版本消歧/最新更正优先/全环境容错防护/无外链依赖/屏幕中心Y轴几何锁定
 // @author       Antigravity
 // @match        *://*/*
 // @grant        GM_addStyle
@@ -19,39 +19,61 @@
     'use strict';
     const win = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
-    const CLOUD_DOMAIN   = GM_getValue('cloud_domain', '175.178.78.88');
+    function safeGMGetValue(key, defVal) {
+        try {
+            if (typeof GM_getValue !== 'undefined') {
+                const val = GM_getValue(key);
+                if (val !== undefined && val !== null) return val;
+            }
+            if (typeof localStorage !== 'undefined') {
+                const lval = localStorage.getItem('ea_' + key);
+                if (lval !== null) return lval;
+            }
+        } catch(e) {}
+        return defVal;
+    }
+
+    function safeGMSetValue(key, val) {
+        try {
+            if (typeof GM_setValue !== 'undefined') { GM_setValue(key, val); return; }
+            if (typeof localStorage !== 'undefined') { localStorage.setItem('ea_' + key, String(val)); }
+        } catch(e) {}
+    }
+
+    const CLOUD_DOMAIN   = safeGMGetValue('cloud_domain', '175.178.78.88');
     const HTTP_URL       = `http://${CLOUD_DOMAIN}/api/search`;
     const TOKEN_INFO_URL = `http://${CLOUD_DOMAIN}/api/token/info`;
 
-    let USER_TOKEN = GM_getValue('user_token', 'TEST-VIP-2026-8888');
-    let DEVICE_ID  = GM_getValue('device_id', '');
+    let USER_TOKEN = safeGMGetValue('user_token', 'TEST-VIP-2026-8888');
+    let DEVICE_ID  = safeGMGetValue('device_id', '');
     if (!DEVICE_ID) {
         const fp = [navigator.userAgent.length,screen.width,screen.height,screen.colorDepth,navigator.language,new Date().getTimezoneOffset(),navigator.hardwareConcurrency||4,Math.random().toString(36).slice(2,10)].join('-');
         DEVICE_ID = btoa(fp).replace(/[^A-Za-z0-9]/g,'').slice(0,32);
-        GM_setValue('device_id', DEVICE_ID);
+        safeGMSetValue('device_id', DEVICE_ID);
     }
 
     let socket=null,activeType=null,isConnected=false,isCollapsed=false;
-    let autoCheckEnabled=GM_getValue('autoCheckEnabled',true);
+    let autoCheckEnabled=safeGMGetValue('autoCheckEnabled',true);
+    if (typeof autoCheckEnabled === 'string') autoCheckEnabled = (autoCheckEnabled === 'true');
+
     let fullAutoEnabled=false,lastSwitchTimestamp=0,isSwitchingQuestion=false;
     let lastSelectedText='',currentTitleHash='',selectionTimer=null;
     let container=null,fallbackMode=false,lastAutoProcessTime=0;
     let inputQ,searchBtn,resultsList,toggleBtn,bodyEl,statusDot,debugBar;
     let autoCheckToggle, fullAutoToggle;
 
-    // ===== 🎨 极致高端 CSS =====
+    // ===== 🎨 极致高端 CSS (系统级高质字体，无外链依赖) =====
     const cssText = `
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-
     #ea-root {
         position: fixed !important;
         width: 330px !important;
         top: 18px !important; right: 18px !important;
         z-index: 2147483647 !important;
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
         font-size: 13px !important;
         display: block !important;
         visibility: visible !important;
+        opacity: 1 !important;
         user-select: none !important;
     }
     #ea-panel {
@@ -339,7 +361,7 @@
                 <div id="ea-header-left">
                     <div id="ea-status-wrap"><div id="ea-status-dot"></div></div>
                     <span id="ea-title">🎯 考试助手</span>
-                    <span id="ea-version-tag">v99</span>
+                    <span id="ea-version-tag">v102</span>
                 </div>
                 <button id="ea-collapse-btn">─</button>
             </div>
@@ -364,6 +386,7 @@
         </div>`;
 
         (document.body||document.documentElement).appendChild(container);
+        console.log('🚀 [网页考试助手 v101] 浮窗已成功注入页面！');
 
         inputQ      = document.getElementById('ea-input');
         searchBtn   = document.getElementById('ea-search-btn');
@@ -379,7 +402,7 @@
         autoCheckToggle.addEventListener('click', ()=>{
             autoCheckEnabled = !autoCheckEnabled;
             autoCheckToggle.classList.toggle('on', autoCheckEnabled);
-            GM_setValue('autoCheckEnabled', autoCheckEnabled);
+            safeGMSetValue('autoCheckEnabled', autoCheckEnabled);
         });
         fullAutoToggle.addEventListener('click', ()=>{
             fullAutoEnabled = !fullAutoEnabled;
@@ -617,17 +640,28 @@
     }
 
     function remapLettersByContent(origLetters,dbOpts,webOpts){
-        if(!origLetters||origLetters.length===0)return{letters:[],isRemapped:false};
-        const finalLetters=[]; let isRemapped=false;
+        if(!origLetters||origLetters.length===0)return{letters:[],isRemapped:false,isValidMatch:false};
+        if(Object.keys(dbOpts).length===0||Object.keys(webOpts).length===0){
+            return{letters:origLetters,isRemapped:false,isValidMatch:true};
+        }
+        const finalLetters=[]; let isRemapped=false; let validCount=0;
         origLetters.forEach(origLetter=>{
             const dbText=dbOpts[origLetter];
-            if(!dbText){finalLetters.push(origLetter);return;}
-            let bestLetter=origLetter,bestSim=0;
-            for(const[webLetter,webText]of Object.entries(webOpts)){const sim=textSimilarity(dbText,webText); if(sim>bestSim){bestSim=sim;bestLetter=webLetter;}}
-            finalLetters.push(bestLetter);
-            if(bestLetter!==origLetter)isRemapped=true;
+            if(!dbText){ finalLetters.push(origLetter); validCount++; return; }
+            let bestLetter=null, bestSim=0;
+            for(const[webLetter,webText]of Object.entries(webOpts)){
+                const sim=textSimilarity(dbText,webText);
+                if(sim>bestSim){bestSim=sim;bestLetter=webLetter;}
+            }
+            // 🌟 文本匹配碰撞强校验：只有相似度 >= 0.45 才可以重映射！
+            if(bestSim>=0.45&&bestLetter){
+                finalLetters.push(bestLetter); validCount++;
+                if(bestLetter!==origLetter)isRemapped=true;
+            }
         });
-        return{letters:[...new Set(finalLetters)],isRemapped};
+        const uniqueLetters=[...new Set(finalLetters)];
+        const isValidMatch = validCount>0 && uniqueLetters.length===origLetters.length;
+        return{letters:uniqueLetters,isRemapped,isValidMatch};
     }
 
     function autoClickAnswerOption(targetLetters){
@@ -721,21 +755,30 @@
 
         const overallSim=(Object.keys(dbOpts).length>0&&Object.keys(webOpts).length>0)?calcOverallOptionsSimilarity(dbOpts,webOpts):1.0;
         let finalLetters=origLetters,isRemapped=false,statusType='exact';
-        if(overallSim>=0.55){const r=remapLettersByContent(origLetters,dbOpts,webOpts);finalLetters=r.letters;isRemapped=r.isRemapped;statusType=isRemapped?'remapped':'exact';}
-        else if(Object.keys(dbOpts).length>0&&Object.keys(webOpts).length>0){statusType='mismatch';}
+        
+        if (Object.keys(dbOpts).length>0 && Object.keys(webOpts).length>0) {
+            const r=remapLettersByContent(origLetters,dbOpts,webOpts);
+            if (r.isValidMatch && r.letters.length>0) {
+                finalLetters=r.letters;
+                isRemapped=r.isRemapped;
+                statusType=isRemapped?'remapped':'exact';
+            } else {
+                statusType='mismatch';
+            }
+        }
 
         let displayAns='';
         if(isTF){displayAns=finalLetters.includes('A')?'A. 正确':'B. 错误';}
         else{displayAns=finalLetters.join(', ');}
 
-        if(statusType!=='mismatch')autoClickAnswerOption(finalLetters);
-        else setDebug('⚠️ 选项不匹配，停止自动勾选');
+        if(statusType!=='mismatch'&&finalLetters.length>0) autoClickAnswerOption(finalLetters);
+        else setDebug('⚠️ 选项文本不匹配（疑似同题干变体题），已停止勾选');
 
-        if(statusType==='mismatch'){
+        if(statusType==='mismatch'||finalLetters.length===0){
             resultsList.innerHTML=`
             <div class="ea-warn-card">
-                <div class="ea-warn-header">⚠️ 疑似题目不匹配 <span class="ea-badge-mismatch">选项相似度 ${Math.round(overallSim*100)}%</span></div>
-                <div class="ea-warn-body">云端返回题目选项内容与当前页面选项差异过大，可能是同题干但不同内容的题目。<br><br>DB原始答案字母：<strong>${origLetters.join(', ')}</strong><br>已停止自动勾选，请人工核对。</div>
+                <div class="ea-warn-header">⚠️ 疑似同题干变体题目 <span class="ea-badge-mismatch">选项重合度 ${Math.round(overallSim*100)}%</span></div>
+                <div class="ea-warn-body">数据库答案文本与当前页面选项完全不符合，可能是相同题干但不同选项池的变体题目。<br><br>DB原始答案字母：<strong>${origLetters.join(', ')}</strong><br>已停止盲目勾选，请人工核对选项。</div>
             </div>`;
             return;
         }
@@ -759,6 +802,8 @@
         }
 
         const badge=isRemapped?`<span class="ea-badge-remap">已重映射</span>`:`<span style="color:rgba(148,163,184,0.5);font-size:9px;">验证${Math.round(overallSim*100)}%</span>`;
+        const distinctList = (data.distinct_answers||[]).filter(a=>a&&a!==origLetters.join(''));
+        const altAnsHtml = distinctList.length>0 ? `<div style="font-size:10px;color:rgba(251,191,36,0.85);padding:0 12px 6px;">💡 同题干另有答案版本: <strong>${distinctList.join(' / ')}</strong></div>` : '';
 
         resultsList.innerHTML=`
         <div class="ea-result-card">
@@ -773,6 +818,7 @@
                     <button class="ea-copy-btn" id="ea-copy-btn">复制答案</button>
                 </div>
             </div>
+            ${altAnsHtml}
             ${optHtml}
         </div>`;
 
